@@ -1,0 +1,10 @@
+FROM python:3.11-bullseye AS builder
+
+WORKDIR /build
+COPY . .
+
+# Build the wheel
+RUN pip install build && python -m build
+
+# Create a directory to store the wheel that will be easy to copy from
+RUN mkdir /wheels && cp dist/*.whl /wheels/

@@ -1,0 +1,54 @@
+[project]
+name = "krules-framework"
+version = "1.0.0rc0"
+description = "KRules Framework"
+authors = [{name = "Airspot", email = "info@airspot.tech"}]
+requires-python = ">=3.11, <3.13"
+#readme = "README.md"
+license = {text = "Apache-2.0"}
+
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "dependency-injector==4.42.0",
+    "krules-core==0.12", # TODO: remove once #1 is done
+]
+
+[project.optional-dependencies]
+pubsub = [
+    "google-cloud-pubsub>=2.26.1",
+    "cloudevents==1.11.0",
+]
+
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["krules_pubsub"]
+
+[tool.hatch.build]
+include = [
+    "krules_pubsub/**/*.py",
+    "tests/**/*.py",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v"
