@@ -1,6 +1,6 @@
 [project]
 name = "krules-framework"
-version = "1.0.1"
+version = "1.0.2"
 description = "KRules Framework"
 authors = [{name = "Airspot", email = "info@airspot.tech"}]
 requires-python = ">=3.11, <3.13"
@@ -70,8 +70,11 @@ packages = [
 include = [
     "krules_core/**/*.py",
     "krules_cloudevents/**/*.py",
-    "krules_env/**/*.py",
     "krules_pubsub/**/*.py",
+    "krules_env/**/*.py",
+    "krules_cloudevents_pubsub/**/*.py",
+    "krules_fastapi_env/**/*.py",
+    "redis_subjects_storage/**/*.py",
 ]
 exclude = [
     "tests/**/*.py",
