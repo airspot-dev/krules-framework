@@ -26,7 +26,7 @@ def lint(c):
     c.run("black . --check")
 
 
-@task(pre=[clean, lint, run_tests])
+@task(pre=[clean])
 def build(c):
     """Build package distributions."""
     c.run("python -m build")
@@ -147,4 +147,4 @@ def show_version(c):
     """Show current version from pyproject.toml."""
     with open("pyproject.toml", "r") as f:
         config = toml.load(f)
-    print(f"Current version: {config['project']['version']}")
+    print(f"{config['project']['version']}")
