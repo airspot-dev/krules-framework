@@ -1,21 +1,17 @@
 import logging
-import os
-import sys
 from contextvars import ContextVar
-from typing import Callable
+from typing import Optional
 
-import json_logging
 from dependency_injector import providers
-from fastapi import FastAPI, routing, Response, Request
-from fastapi.types import DecoratedCallable
-from starlette.exceptions import HTTPException
-from starlette.responses import PlainTextResponse
-from starlette.types import Scope, Receive, Send
+from fastapi import FastAPI, Request
+from rich.logging import RichHandler
 
 from krules_core.providers import subject_factory
-from .globals import GlobalsMiddleware
 
 ctx_subjects = ContextVar('g_subjects', default=[])
+
+
+
 
 class KrulesApp(FastAPI):
 
@@ -35,31 +31,47 @@ class KrulesApp(FastAPI):
     def __init__(
             self,
             wrap_subjects: bool = True,
+            logger: Optional[logging.Logger] = None,
+            logger_name: str = "krules-app",
+            log_level: int = logging.INFO,
             *args, **kwargs,
     ) -> None:
         super().__init__(
             *args, **kwargs,
         )
-        #self.router.route_class = KRulesAPIRoute
-        # self.router = KRulesAPIRouter(
-        #     *args, **kwargs,
-        # )
         self.setup()
         self.middleware("http")(self.krules_middleware)
-        #self.add_middleware(GlobalsMiddleware)
-        json_logging.init_fastapi(enable_json=True)
-        json_logging.init_request_instrument(self)
-        self.logger = logging.getLogger(self.title)
-        self.logger.setLevel(int(os.environ.get("LOGGING_LEVEL", logging.INFO)))
-        self.logger.addHandler(logging.StreamHandler(sys.stdout))
-        self.logger.propagate = False
+
+        # Set up the logger
+        if logger is not None:
+            self._logger = logger
+        else:
+            # Create default logger
+            self._logger = logging.getLogger(logger_name)
+
+            handler = RichHandler(
+                rich_tracebacks=True,  # Enable rich tracebacks
+                markup=True,  # Enable markup for log messages
+                show_time=True,  # Show time in log messages
+                show_path=True  # Show file path in log messages
+            )
+            self._logger.addHandler(handler)
+            self._logger.setLevel(log_level)
 
         if wrap_subjects:
-            self.logger.info("Overriding subject_factory for wrapping")
+            self._logger.info("Overriding subject_factory for wrapping")
             subject_factory.override(
                 providers.Factory(lambda *_args, **_kw: _subjects_wrap(subject_factory.cls, self, *_args, **_kw)))
         else:
-            self.logger.info("Subject wrapping is disabled")
+            self._logger.info("Subject wrapping is disabled")
+
+    @property
+    def logger(self) -> logging.Logger:
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger: logging.Logger):
+        self._logger = logger
 
 
 def _subjects_wrap(subject_class, app, *args, **kwargs):
@@ -73,3 +85,16 @@ def _subjects_wrap(subject_class, app, *args, **kwargs):
     subjects.append(subject)  # Append to the request-specific list
     app.logger.debug("wrapped: {}".format(subject))
     return subject
+
+
+# override wrap subjects defafult behaviour
+class KRulesApp(KrulesApp):
+    def __init__(
+            self,
+            wrap_subjects: bool = False,  # Changed default here
+            *args, **kwargs
+    ) -> None:
+        super().__init__(
+            wrap_subjects=wrap_subjects,
+            *args, **kwargs
+        )

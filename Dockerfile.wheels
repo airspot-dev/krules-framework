@@ -1,10 +1,25 @@
+# Dockerfile.wheels
 FROM python:3.11-bullseye AS builder
 
 WORKDIR /build
-COPY . .
 
-# Build the wheel
-RUN pip install build && python -m build
+# Install build dependencies
+RUN pip install --no-cache-dir hatchling
 
-# Create a directory to store the wheel that will be easy to copy from
-RUN mkdir /wheels && cp dist/*.whl /wheels/
+# Copy only the necessary files for building
+COPY pyproject.toml .
+COPY krules_core ./krules_core
+COPY krules_cloudevents ./krules_cloudevents
+COPY krules_pubsub ./krules_pubsub
+COPY krules_env ./krules_env
+COPY krules_cloudevents_pubsub ./krules_cloudevents_pubsub
+COPY krules_fastapi_env ./krules_fastapi_env
+COPY redis_subjects_storage ./redis_subjects_storage
+
+# Build wheels with all extras
+RUN pip wheel --no-deps --wheel-dir /wheels . && \
+    pip wheel --no-deps --wheel-dir /wheels ".[pubsub,fastapi,redis,dev]"
+
+# Create a minimal image with just the wheels
+FROM scratch
+COPY --from=builder /wheels /wheels
