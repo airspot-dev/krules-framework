@@ -1,132 +1,39 @@
 [project]
 name = "krules-framework"
-version = "1.0.3"
+version = "1.0.4"
 description = "KRules Framework"
-authors = [{name = "Airspot", email = "info@airspot.tech"}]
 requires-python = ">=3.11, <3.13"
-#readme = "README.md"
-license = {text = "Apache-2.0"}
-keywords = ["krules", "framework"]
+keywords = [ "krules", "framework",]
 homepage = "https://airspot.tech"
 repository = "https://github.com/airspot-dev/krules-framework.git"
-
-classifiers = [
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-
-dependencies = [
-    "dependency-injector==4.42.0",
-    "wrapt>=1.16.0, <2.0.0",
-    "rx>=3.2.0, <4.0.0",
-    "jsonpatch>=1.33, <2.0.0",
-    "jsonpath-rw-ext>=1.2.2, <2.0.0",
-    "pydantic>=2.7.3, <3.0.0",
-    "deepmerge>=1.1.1, <2.0.0",
-    "cel-python>=0.1.5, <1.0.0",
-    "pytz>=2024.1",
-    "rich>=13.9.4",
-]
-
-[project.optional-dependencies]
-pubsub = [
-    "google-cloud-pubsub>=2.26.1",
-    "cloudevents==1.11.0",
-]
-fastapi = [
-    "fastapi>=0.115.4",
-    "uvicorn>=0.32.0",
-]
-redis=[
-    "redis>=5.2.0",
-]
-dev = [
-    # Testing
-    "pytest>=7.0.0",
-    "pytest-localserver>=0.9.0",
-    "pytest-cov>=4.0.0",
-    "httpx>=0.27.2",
-
-    # Code Quality
-    "black>=23.0.0",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
-    "flake8>=7.0.0",
-    "pylint>=3.0.0",
-
-    # Type Checking
-    "types-pytz",
-    "types-toml",
-
-    # Release Management
-    "invoke>=2.2.0",
-    "semver>=3.0.0",
-    "toml>=0.10.2",
-    "gitpython>=3.1.40",
-    "build>=1.0.3",
-    "twine>=4.0.2",
-
-    # Documentation
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocstrings[python]>=0.24.0",
-]
+classifiers = [ "License :: OSI Approved :: Apache Software License", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3.11", "Programming Language :: Python :: 3.12",]
+dependencies = [ "dependency-injector==4.42.0", "wrapt>=1.16.0, <2.0.0", "rx>=3.2.0, <4.0.0", "jsonpatch>=1.33, <2.0.0", "jsonpath-rw-ext>=1.2.2, <2.0.0", "pydantic>=2.7.3, <3.0.0", "deepmerge>=1.1.1, <2.0.0", "cel-python>=0.1.5, <1.0.0", "pytz>=2024.1", "rich>=13.9.4",]
+[[project.authors]]
+name = "Airspot"
+email = "info@airspot.tech"
 
 [build-system]
-requires = ["hatchling"]
+requires = [ "hatchling",]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.targets.wheel]
-packages = [
-    "krules_core",
-    "krules_cloudevents",
-    "krules_pubsub",
-    "krules_env",
-    "krules_cloudevents_pubsub",
-    "krules_fastapi_env",
-    "redis_subjects_storage",
-]
+[project.license]
+text = "Apache-2.0"
+
+[project.optional-dependencies]
+pubsub = [ "google-cloud-pubsub>=2.26.1", "cloudevents==1.11.0",]
+fastapi = [ "fastapi>=0.115.4", "uvicorn>=0.32.0",]
+redis = [ "redis>=5.2.0",]
+dev = [ "pytest>=7.0.0", "pytest-localserver>=0.9.0", "pytest-cov>=4.0.0", "httpx>=0.27.2", "black>=23.0.0", "isort>=5.0.0", "mypy>=1.0.0", "flake8>=7.0.0", "pylint>=3.0.0", "types-pytz", "types-toml", "invoke>=2.2.0", "semver>=3.0.0", "toml>=0.10.2", "gitpython>=3.1.40", "build>=1.0.3", "twine>=4.0.2", "mkdocs>=1.5.0", "mkdocs-material>=9.0.0", "mkdocstrings[python]>=0.24.0",]
 
 [tool.hatch.build]
-include = [
-    "krules_core/**/*.py",
-    "krules_cloudevents/**/*.py",
-    "krules_pubsub/**/*.py",
-    "krules_env/**/*.py",
-    "krules_cloudevents_pubsub/**/*.py",
-    "krules_fastapi_env/**/*.py",
-    "redis_subjects_storage/**/*.py",
-]
-exclude = [
-    "tests/**/*.py",
-]
+include = [ "krules_core/**/*.py", "krules_cloudevents/**/*.py", "krules_pubsub/**/*.py", "krules_env/**/*.py", "krules_cloudevents_pubsub/**/*.py", "krules_fastapi_env/**/*.py", "redis_subjects_storage/**/*.py",]
+exclude = [ "tests/**/*.py",]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 python_files = "test_*.py"
-addopts = """
-    -v
-    tests/test_core/test_router.py
-    tests/test_core/test_core.py
-    tests/test_core/test_argprocessors.py
-    tests/test_core/subject/test_empty_storage.py
-    tests/test_core/subject/sqlite_storage/test_sqlitestorage_onfile.py
-    tests/test_core/subject/test_storage.py
-    tests/test_core/subject/test_storaged_subject.py
-    tests/test_core/base_functions/test_filters.py
-    tests/test_core/base_functions/test_processing.py
-    tests/test_core/base_functions/test_misc.py
-    tests/test_core/subject/sqlite_storage/test_sqlitestorage_inmemory.py
-    tests/test_core/subject/test_storage.py
-    tests/test_core/subject/test_storaged_subject.py
-    tests/test_core/base_functions/test_filters.py
-    tests/test_core/base_functions/test_processing.py
-    tests/test_core/base_functions/test_misc.py
-    tests/test_cloudevents/test_dispatcher.py
-    tests/test_pubsub_subscriber/test_pubsub.py
-    tests/test_fastapi/test_wrap_subjects.py
-    tests/test_storages_redis/test_storage.py
-"""
+addopts = "    -v\n    tests/test_core/test_router.py\n    tests/test_core/test_core.py\n    tests/test_core/test_argprocessors.py\n    tests/test_core/subject/test_empty_storage.py\n    tests/test_core/subject/sqlite_storage/test_sqlitestorage_onfile.py\n    tests/test_core/subject/test_storage.py\n    tests/test_core/subject/test_storaged_subject.py\n    tests/test_core/base_functions/test_filters.py\n    tests/test_core/base_functions/test_processing.py\n    tests/test_core/base_functions/test_misc.py\n    tests/test_core/subject/sqlite_storage/test_sqlitestorage_inmemory.py\n    tests/test_core/subject/test_storage.py\n    tests/test_core/subject/test_storaged_subject.py\n    tests/test_core/base_functions/test_filters.py\n    tests/test_core/base_functions/test_processing.py\n    tests/test_core/base_functions/test_misc.py\n    tests/test_cloudevents/test_dispatcher.py\n    tests/test_pubsub_subscriber/test_pubsub.py\n    tests/test_fastapi/test_wrap_subjects.py\n    tests/test_storages_redis/test_storage.py\n"
+
+[tool.hatch.build.targets.wheel]
+packages = [ "krules_core", "krules_cloudevents", "krules_pubsub", "krules_env", "krules_cloudevents_pubsub", "krules_fastapi_env", "redis_subjects_storage",]
