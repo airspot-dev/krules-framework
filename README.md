@@ -50,7 +50,7 @@ pip install "krules-framework[redis]"
 
 ## Requirements
 
-- Python >=3.11, <3.13
+- Python >=3.11
 - See `pyproject.toml` for detailed dependency information
 
 ## License

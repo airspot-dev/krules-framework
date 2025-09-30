@@ -11,7 +11,7 @@
 import pytest
 from krules_core.base_functions.filters import Filter
 from krules_core.base_functions.processing import SetPayloadProperty
-from rx import subject as rx_subject
+from reactivex import subject as rx_subject
 from dependency_injector import providers
 import inspect
 from krules_core.arg_processors import BaseArgProcessor, CELExpressionArgProcessor
@@ -19,7 +19,7 @@ from krules_core import RuleConst
 from krules_core.base_functions import RuleFunctionBase
 from krules_core.core import RuleFactory
 from krules_core.providers import event_router_factory, subject_factory, proc_events_rx_factory
-# from rx import subject
+# from reactivex import subject
 from krules_core.models import Rule, EventType
 
 filters = RuleConst.FILTERS

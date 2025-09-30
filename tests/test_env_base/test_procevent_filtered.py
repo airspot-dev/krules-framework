@@ -1,6 +1,6 @@
 import pytest
 import os
-from rx import subject as rx_subject
+from reactivex import subject as rx_subject
 
 from krules_core.route.dispatcher import BaseDispatcher
 from krules_core.route.router import EventRouter

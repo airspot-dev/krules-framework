@@ -16,7 +16,7 @@ from krules_core.base_functions import RuleFunctionBase
 from krules_core.base_functions.filters import OnSubjectPropertyChanged, Filter
 from krules_core.base_functions.processing import Process, SetPayloadProperties, SetPayloadProperty, PayloadDeepMerge, \
     SetSubjectProperty, SetSubjectExtendedProperty, FlushSubject, SetSubjectProperties
-from rx import subject as rx_subject
+from reactivex import subject as rx_subject
 
 from krules_core import RuleConst, ProcEventsLevel
 from krules_core.core import RuleFactory

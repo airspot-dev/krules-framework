@@ -1,4 +1,4 @@
-from rx import subject as rx_subject
+from reactivex import subject as rx_subject
 
 from dependency_injector import providers
 from krules_core.providers import event_router_factory, proc_events_rx_factory

@@ -3,12 +3,13 @@ from typing import Optional, NewType, List
 from krules_core.arg_processors import BaseArgProcessor
 from krules_core.base_functions.filters import FilterFunction, Filter
 from krules_core.base_functions.processing import ProcessingFunction, Process
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, ConfigDict, constr
 
 EventType = NewType("EventType", constr(pattern="^[a-zA-Z0-9_.-]+$"))
 
 
 class Rule(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str
     description: Optional[str] = "",
@@ -16,11 +17,8 @@ class Rule(BaseModel):
     filters: List[FilterFunction | BaseArgProcessor] = []
     processing: List[ProcessingFunction | BaseArgProcessor] = []
 
-    class Config:
-        arbitrary_types_allowed = True
-
     def dict(self, *args, **kwargs) -> dict:
-        dd = super().dict(exclude_unset=True)
+        dd = super().model_dump(exclude_unset=True)
         dd["data"] = {}
         filters = dd.pop("filters", [])
         for idx, f in enumerate(filters):

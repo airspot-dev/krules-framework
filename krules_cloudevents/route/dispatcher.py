@@ -61,7 +61,7 @@ class CloudEventsDispatcher(BaseDispatcher):
         event.SetEventID(_id)
         event.SetSource(self._source)
         event.SetSubject(str(subject))
-        event.SetEventTime(datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat())
+        event.SetEventTime(datetime.now(pytz.UTC).isoformat())
         event.SetEventType(event_type)
 
         # set extended properties

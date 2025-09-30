@@ -12,7 +12,7 @@
 
 from dependency_injector import providers as di_providers
 from krules_core.subject.empty_storage import EmptySubjectStorage
-from rx import subject
+from reactivex import subject
 
 from .exceptions_dumpers import ExceptionsDumpers
 from .route.dispatcher import BaseDispatcher

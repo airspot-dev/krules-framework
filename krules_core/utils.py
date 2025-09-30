@@ -26,7 +26,7 @@ def load_rules_from_rulesdata(rulesdata):
             description = el
         elif isinstance(el, Rule) or isinstance(el, dict):
             if isinstance(el, Rule):
-                el = el.dict()
+                el = el.model_dump()
             if len(description):
                 el[RuleConst.DESCRIPTION] = description
             if el.get(RuleConst.SUBSCRIBE_TO, None) is None:

@@ -12,7 +12,7 @@ import json
 import re
 
 import pytest
-from rx import subject as rx_subject
+from reactivex import subject as rx_subject
 from dependency_injector import providers
 from krules_core.base_functions.filters import Filter, CheckSubjectProperty, PayloadMatch, SubjectNameMatch, \
     SubjectNameDoesNotMatch, PayloadMatchOne, OnSubjectPropertyChanged

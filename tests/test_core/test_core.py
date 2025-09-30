@@ -10,7 +10,7 @@
 # limitations under the License.
 
 import pytest
-from rx import subject as rx_subject
+from reactivex import subject as rx_subject
 
 import dependency_injector.providers as providers
 from krules_core.base_functions import Callable
