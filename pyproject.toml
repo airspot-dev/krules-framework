@@ -1,12 +1,12 @@
 [project]
 name = "krules-framework"
-version = "1.1.1"
-description = "KRules Framework"
+version = "2.0.0rc1"
+description = "KRules Framework - Async event-driven framework"
 authors = [{name = "Airspot", email = "info@airspot.tech"}]
 requires-python = ">=3.11"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-keywords = ["krules", "framework"]
+keywords = ["krules", "framework", "event-driven", "async", "reactive"]
 homepage = "https://airspot.tech"
 repository = "https://github.com/airspot-dev/krules-framework.git"
 
@@ -16,19 +16,14 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 
 dependencies = [
     "dependency-injector==4.48.2",
     "wrapt>=1.16.0, <2.0.0",
-    "reactivex>=4.0.4, <5.0.0",
-    "jsonpatch>=1.33, <2.0.0",
-    "jsonpath-rw-ext>=1.2.2, <2.0.0",
-    "pydantic>=2.7.3, <3.0.0",
-    "deepmerge>=1.1.1, <2.0.0",
-    "cel-python>=0.1.5, <1.0.0",
-    "pytz>=2024.1",
-    "rich>=13.9.4",
 ]
 
 [project.optional-dependencies]
@@ -118,21 +113,5 @@ exclude = [
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 python_files = "test_*.py"
-addopts = """
-    -v
-    tests/test_core/test_router.py
-    tests/test_core/test_core.py
-    tests/test_core/test_argprocessors.py
-    tests/test_core/subject/test_empty_storage.py
-    tests/test_core/subject/sqlite_storage/test_sqlitestorage_onfile.py
-    tests/test_core/subject/sqlite_storage/test_sqlitestorage_inmemory.py
-    tests/test_core/subject/test_storage.py
-    tests/test_core/subject/test_storaged_subject.py
-    tests/test_core/base_functions/test_filters.py
-    tests/test_core/base_functions/test_processing.py
-    tests/test_core/base_functions/test_misc.py
-    tests/test_cloudevents/test_dispatcher.py
-    tests/test_pubsub_subscriber/test_pubsub.py
-    tests/test_fastapi/test_wrap_subjects.py
-    tests/test_storages_redis/test_storage.py
-"""
+testpaths = ["tests/test_core_v2", "tests/test_subject"]
+addopts = "-v"

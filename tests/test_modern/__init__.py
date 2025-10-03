@@ -9,14 +9,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-KRules 2.0 Event Types
-
-In KRules 2.0, event types are plain strings (no EventType wrapper needed).
-The decorators @on() accept strings directly.
-"""
-
-# Built-in event types (emitted automatically by the Subject system)
-SUBJECT_PROPERTY_CHANGED = SubjectPropertyChanged = "subject-property-changed"
-SUBJECT_PROPERTY_DELETED = SubjectPropertyDeleted = "subject-property-deleted"
-SUBJECT_FLUSHED = SubjectFlushed = "subject-flushed"
+"""Tests for modern decorator-based API"""

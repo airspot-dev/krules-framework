@@ -9,24 +9,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Dependency injection providers for KRules 2.0
+
+Simplified provider system - removed ReactiveX and rule system dependencies.
+Only provides essential factories for Subject and storage.
+"""
 
 from dependency_injector import providers as di_providers
 from krules_core.subject.empty_storage import EmptySubjectStorage
-from reactivex import subject
-
-from .exceptions_dumpers import ExceptionsDumpers
-from .route.dispatcher import BaseDispatcher
-from .route.router import EventRouter
 from .subject.storaged_subject import Subject
 
+# Configuration factory (for application config)
 configs_factory = di_providers.Singleton(lambda: {})
 
-# for testing/development only
-subject_storage_factory = di_providers.Factory(lambda *args, **kwargs: EmptySubjectStorage())
+# Subject storage factory (default: EmptySubjectStorage for testing/development)
+# Override with Redis, SQLite, etc. in production
+subject_storage_factory = di_providers.Factory(
+    lambda *args, **kwargs: EmptySubjectStorage()
+)
 
+# Subject factory
 subject_factory = di_providers.Factory(Subject)
-proc_events_rx_factory = di_providers.Singleton(subject.ReplaySubject)
-# proc_events_rx_factory = subject.ReplaySubject()
-event_router_factory = di_providers.Singleton(EventRouter)
-event_dispatcher_factory = di_providers.Singleton(BaseDispatcher)
-exceptions_dumpers_factory = di_providers.Singleton(ExceptionsDumpers)

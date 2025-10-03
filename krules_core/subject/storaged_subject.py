@@ -12,18 +12,44 @@ class Subject(object):
     Needs a storage strategy implementation
     """
 
-    def __init__(self, name, event_info={}, event_data=None, use_cache_default=True):
-        from krules_core.providers import subject_storage_factory
+    def __init__(self, name, event_info={}, event_data=None, use_cache_default=True, storage=None, event_bus=None):
+        """
+        Initialize a Subject.
 
+        Args:
+            name: Subject name/identifier
+            event_info: Event information dictionary
+            event_data: Event data
+            use_cache_default: Whether to use caching by default
+            storage: Storage factory provider (if None, uses global subject_storage_factory)
+            event_bus: EventBus instance (if None, uses global get_event_bus())
+        """
         self.name = name
         self._use_cache = use_cache_default
-        self._storage = subject_storage_factory(name, event_info=event_info, event_data=event_data)
+
+        # Dependency injection: accept storage or fallback to global provider
+        if storage is None:
+            # Backward compatibility: use global provider
+            from krules_core.providers import subject_storage_factory
+            storage = subject_storage_factory
+
+        self._storage = storage(name, event_info=event_info, event_data=event_data)
         self._event_info = event_info
         self._cached = None
 
-    def __str__(self):
+        # Dependency injection: accept event_bus or fallback to global
+        if event_bus is None:
+            # Backward compatibility: use global event bus
+            from krules_core.event_bus import get_event_bus
+            event_bus = get_event_bus()
 
+        self._event_bus = event_bus
+
+    def __str__(self):
         return self.name
+
+    def __repr__(self):
+        return f"Subject<{self.name}>"
 
     def _load(self):
 
@@ -93,9 +119,24 @@ class Subject(object):
             payload = {PayloadConst.PROPERTY_NAME: prop, PayloadConst.OLD_VALUE: old_value,
                        PayloadConst.VALUE: value}
 
-            from krules_core.providers import event_router_factory
-            from krules_core import event_types
-            event_router_factory().route(event_types.SUBJECT_PROPERTY_CHANGED, self, payload)
+            # Emit property change event using injected event bus
+            import asyncio
+
+            event_type = "subject-property-changed"
+
+            # Try to emit async, fallback to sync if needed
+            try:
+                loop = asyncio.get_running_loop()
+                # Already in async context - schedule emission
+                asyncio.create_task(self._event_bus.emit(event_type, self, payload))
+            except RuntimeError:
+                # No running loop - emit synchronously
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(self._event_bus.emit(event_type, self, payload))
+                except RuntimeError:
+                    # No loop at all - create one
+                    asyncio.run(self._event_bus.emit(event_type, self, payload))
 
         return value, old_value
 
@@ -174,9 +215,20 @@ class Subject(object):
         if not muted:
             payload = {PayloadConst.PROPERTY_NAME: prop}
 
-            from krules_core.providers import event_router_factory
-            from krules_core import event_types
-            event_router_factory().route(event_types.SUBJECT_PROPERTY_DELETED, self, payload)
+            # Emit property deleted event using injected event bus
+            import asyncio
+
+            event_type = "subject-property-deleted"
+
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(self._event_bus.emit(event_type, self, payload))
+            except RuntimeError:
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(self._event_bus.emit(event_type, self, payload))
+                except RuntimeError:
+                    asyncio.run(self._event_bus.emit(event_type, self, payload))
 
     def delete(self, prop, muted=False, use_cache=None):
         self._delete(prop, False, muted, use_cache)
@@ -198,9 +250,6 @@ class Subject(object):
         return self._event_info.copy()
 
     def flush(self):
-        from krules_core.providers import event_router_factory
-        from krules_core import event_types
-
         props = {
             "ext_props": self.get_ext_props(),
             "props": {},
@@ -210,7 +259,21 @@ class Subject(object):
 
         self._storage.flush()
 
-        event_router_factory().route(event_types.SUBJECT_FLUSHED, self, props)
+        # Emit flush event using injected event bus
+        import asyncio
+
+        event_type = "subject-flushed"
+
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(self._event_bus.emit(event_type, self, props))
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(self._event_bus.emit(event_type, self, props))
+            except RuntimeError:
+                asyncio.run(self._event_bus.emit(event_type, self, props))
+
         return self
 
     def store(self):
