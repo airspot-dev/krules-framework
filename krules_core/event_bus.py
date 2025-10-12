@@ -45,19 +45,32 @@ class EventContext:
     property_name: Optional[str] = None
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
+    _metadata: dict = None
 
     def __post_init__(self):
         """Extract property change metadata from payload"""
+        if self._metadata is None:
+            self._metadata = {}
+
         if "property_name" in self.payload:
             self.property_name = self.payload.get("property_name")
             self.old_value = self.payload.get("old_value")
             self.new_value = self.payload.get("value")
 
+    def get_metadata(self, key: str, default: Any = None) -> Any:
+        """Get custom metadata"""
+        return self._metadata.get(key, default)
+
+    def set_metadata(self, key: str, value: Any):
+        """Set custom metadata (for middleware/handler communication)"""
+        self._metadata[key] = value
+
     async def emit(
         self,
         event_type: str,
         payload: Optional[dict] = None,
-        subject: Optional[Any] = None
+        subject: Optional[Any] = None,
+        **extra
     ):
         """
         Emit a new event.
@@ -66,13 +79,17 @@ class EventContext:
             event_type: Type of event to emit
             payload: Event payload (defaults to empty dict)
             subject: Subject for the event (defaults to current subject)
+            **extra: Extra kwargs (e.g., topic="alerts", dataschema="...")
+
+        Example:
+            await ctx.emit("alert.critical", topic="alerts")
         """
         if payload is None:
             payload = {}
         if subject is None:
             subject = self.subject
 
-        await get_event_bus().emit(event_type, subject, payload)
+        await get_event_bus().emit(event_type, subject, payload, **extra)
 
 
 @dataclass
@@ -195,7 +212,7 @@ class EventBus:
         """
         self._middleware.append(middleware)
 
-    async def emit(self, event_type: str, subject: Any, payload: dict):
+    async def emit(self, event_type: str, subject: Any, payload: dict, **extra):
         """
         Emit an event and execute all matching handlers.
 
@@ -203,15 +220,21 @@ class EventBus:
             event_type: Type of event
             subject: Subject instance
             payload: Event payload
+            **extra: Extra kwargs stored in context metadata (e.g., topic, dataschema, etc.)
 
         Example:
             await event_bus.emit("user.login", user, {"ip": "1.2.3.4"})
+            await event_bus.emit("alert.critical", device, {}, topic="alerts")
         """
         ctx = EventContext(
             event_type=event_type,
             subject=subject,
             payload=payload
         )
+
+        # Store extra kwargs in context metadata for middleware access
+        for key, value in extra.items():
+            ctx.set_metadata(key, value)
 
         logger.debug(f"Emitting event {event_type} on subject {subject}")
 

@@ -137,4 +137,42 @@ class SubjectsRedisStorage(object):
         return self
 
 
+def create_redis_storage(redis_url: str, redis_prefix: str):
+    """
+    Factory function for creating Redis storage instances.
+
+    Lazy import of redis_subjects_storage to avoid loading Redis
+    dependency if not needed (e.g., in tests with mock storage).
+
+    Args:
+        redis_url: Redis connection URL
+        redis_prefix: Key prefix for Redis keys
+
+    Returns:
+        Callable that creates SubjectsRedisStorage instances
+
+    Note:
+        The returned factory accepts:
+        - name (positional): subject name
+        - event_info, event_data (kwargs): ignored, accepted for compatibility
+
+        SubjectsRedisStorage signature: __init__(subject, url, key_prefix)
+    """
+    from redis_subjects_storage.storage_impl import SubjectsRedisStorage
+
+    def storage_factory(name, **kwargs):
+        """
+        Create Redis storage instance for a subject.
+
+        Args:
+            name: Subject name (positional)
+            **kwargs: Ignored (event_info, event_data, etc.)
+        """
+        return SubjectsRedisStorage(
+            subject=name,  # SubjectsRedisStorage uses 'subject' param
+            url=redis_url,
+            key_prefix=redis_prefix
+        )
+
+    return storage_factory
 

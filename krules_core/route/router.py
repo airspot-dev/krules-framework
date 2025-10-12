@@ -16,10 +16,14 @@ logger = logging.getLogger("__router__")
 
 
 class DispatchPolicyConst:
-    DEFAULT = "default"
-    ALWAYS = "always"
-    NEVER = "never"
-    DIRECT = "direct"
+    # Active policies (modern EventBus with middleware)
+    DIRECT = "direct"  # Dispatch only to external topic, skip local handlers
+    BOTH = "both"      # Dispatch to external topic AND execute local handlers
+
+    # Deprecated policies (legacy compatibility only)
+    DEFAULT = "default"  # Deprecated: use DIRECT or BOTH explicitly
+    ALWAYS = "always"    # Deprecated: renamed to BOTH for clarity
+    NEVER = "never"      # Deprecated: if you don't want dispatch, don't specify 'topic' kwarg
 
 
 class EventRouter(object):

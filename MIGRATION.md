@@ -1,4 +1,4 @@
-# Migration Guide: KRules 1.x → 2.0
+ # Migration Guide: KRules 1.x → 2.0
 
 ## Overview
 

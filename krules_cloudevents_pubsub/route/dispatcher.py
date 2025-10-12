@@ -18,7 +18,6 @@ from pprint import pprint
 from cloudevents.pydantic import CloudEvent
 from google.cloud import pubsub_v1
 
-from krules_core.providers import subject_factory
 from krules_core.route.dispatcher import BaseDispatcher
 from krules_core.subject import PayloadConst
 
@@ -44,21 +43,45 @@ def _callback(publish_future, exception_handler=None):
 
 class CloudEventsDispatcher(BaseDispatcher):
 
-    def __init__(self, project_id, topic_id, source, batch_settings=(), publisher_options=(), publisher_kwargs={}):
+    def __init__(self, project_id, source, krules_container, topic_id=None, batch_settings=(), publisher_options=(), publisher_kwargs={}, default_dispatch_policy="direct"):
+        """
+        CloudEvents dispatcher for Google Cloud PubSub.
 
+        Args:
+            project_id: GCP project ID
+            source: CloudEvent source identifier
+            krules_container: Krules IoC container
+            topic_id: Default PubSub topic ID (optional, can be overridden per-event with 'topic' kwarg)
+                     If None, 'topic' must be specified in each dispatch() call or via middleware metadata
+            batch_settings: PubSub batch settings
+            publisher_options: PubSub publisher options
+            publisher_kwargs: Additional publisher kwargs
+            default_dispatch_policy: Default dispatch policy when 'dispatch_policy' not specified
+                                    (default: "direct" - only dispatch, skip local handlers)
+                                    Options: "direct" | "both"
+        """
         self._project_id = project_id
         self._topic_id = topic_id
         self._source = source
+        self._krules = krules_container
+        self._default_dispatch_policy = default_dispatch_policy
         self._publisher = pubsub_v1.PublisherClient(
             batch_settings=batch_settings,
             publisher_options=publisher_options,
             **publisher_kwargs
         )
 
+    @property
+    def default_dispatch_policy(self):
+        """Get the default dispatch policy"""
+        return self._default_dispatch_policy
+
     def dispatch(self, event_type, subject, payload, **extra):
 
+        #import logfire
+        #with logfire.span("PubSub Dispatcher", event=event_type, subject=subject, payload=payload, extra=extra):
         if isinstance(subject, str):
-            subject = subject_factory(subject)
+            subject = self._krules.subject(subject)
         _event_info = subject.event_info()
 
         _topic_id = self._topic_id
@@ -88,14 +111,16 @@ class CloudEventsDispatcher(BaseDispatcher):
         ext_props.update(extra)
 
         event = CloudEvent(
-            id=_id,
-            type=event_type,
-            source=self._source,
-            subject=str(subject),
+            attributes=dict(
+                id=_id,
+                type=event_type,
+                source=self._source,
+                subject=str(subject),
+                time=datetime.now(timezone.utc),
+                datacontenttype="application/json",
+                dataschema=dataschema,
+            ),
             data=payload,
-            time=datetime.now(timezone.utc),
-            datacontenttype="application/json",
-            dataschema=dataschema,
         )
 
         event_obj = event.model_dump(exclude_unset=True, exclude_none=True)

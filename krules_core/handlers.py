@@ -182,7 +182,7 @@ def middleware(func: Callable):
     return func
 
 
-async def emit(event_type: str, subject: Any, payload: Optional[dict] = None):
+async def emit(event_type: str, subject: Any, payload: Optional[dict] = None, **extra):
     """
     Emit an event directly (without context).
 
@@ -192,6 +192,7 @@ async def emit(event_type: str, subject: Any, payload: Optional[dict] = None):
         event_type: Type of event to emit
         subject: Subject instance
         payload: Event payload (defaults to empty dict)
+        **extra: Extra kwargs (e.g., topic="alerts", dataschema="...")
 
     Example:
         from krules_core.providers import subject_factory
@@ -199,8 +200,11 @@ async def emit(event_type: str, subject: Any, payload: Optional[dict] = None):
 
         user = subject_factory("user-123")
         await emit("user.updated", user, {"field": "email"})
+
+        # With extra kwargs for middleware
+        await emit("alert.critical", device, {"temp": 95}, topic="alerts")
     """
     if payload is None:
         payload = {}
 
-    await get_event_bus().emit(event_type, subject, payload)
+    await get_event_bus().emit(event_type, subject, payload, **extra)
