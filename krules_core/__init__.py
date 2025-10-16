@@ -74,7 +74,7 @@ class RuleConst:
     # Add other constants if needed during migration
 
 # Container
-from .container import KRulesContainer
+from krules_core.container import KRulesContainer
 
 # Version
 __version__ = "2.0.0"

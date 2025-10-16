@@ -35,9 +35,10 @@ Example:
 """
 
 from dependency_injector import containers, providers
-from .subject.empty_storage import EmptySubjectStorage
-from .subject.storaged_subject import Subject
-from .event_bus import EventBus
+from krules_core.subject.empty_storage import EmptySubjectStorage
+from krules_core.subject.storaged_subject import Subject
+from krules_core.event_bus import EventBus
+from redis_subjects_storage.storage_impl import create_redis_storage
 
 
 def _create_decorators(event_bus):
@@ -117,32 +118,24 @@ def _create_decorators(event_bus):
 
 
 class KRulesContainer(containers.DeclarativeContainer):
-    """
-    Container for KRules 2.0 core dependencies.
 
-    Provides default implementations that can be overridden by applications:
-    - subject_storage: Default EmptySubjectStorage (in-memory, for testing)
-    - subject_factory: Factory for creating Subject instances
-    - event_bus: Singleton EventBus for event dispatch
-
-    Applications should override subject_storage to use persistent storage
-    (Redis, SQLite, PostgreSQL, etc.).
-
-    Attributes:
-        subject_storage: Factory provider for subject storage backend
-        subject_factory: Factory provider for creating subjects
-        event_bus: Singleton provider for the global event bus
-    """
+    config = providers.Configuration()
 
     # Event Bus
     # Singleton instance for event dispatch across the application
     # Must be defined FIRST (used by subject and decorators)
     event_bus = providers.Singleton(EventBus)
 
-    # Subject Storage Factory
-    # Default: EmptySubjectStorage (in-memory, ephemeral)
-    # Applications SHOULD override this with Redis, SQLite, etc.
-    subject_storage = providers.Factory(EmptySubjectStorage)
+    #subject_storage = providers.Factory(EmptySubjectStorage)
+    subject_storage = providers.Selector(
+        config.storage_provider,
+        empty=providers.Factory(EmptySubjectStorage),
+        redis=providers.Callable(
+            create_redis_storage,
+            redis_url=config.storage_redis.url,
+            redis_prefix=config.storage_redis.key_prefix,
+        )
+    )
 
     # Subject Factory
     # Creates Subject instances with injected storage and event_bus dependencies

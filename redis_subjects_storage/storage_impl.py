@@ -158,7 +158,6 @@ def create_redis_storage(redis_url: str, redis_prefix: str):
 
         SubjectsRedisStorage signature: __init__(subject, url, key_prefix)
     """
-    from redis_subjects_storage.storage_impl import SubjectsRedisStorage
 
     def storage_factory(name, **kwargs):
         """
