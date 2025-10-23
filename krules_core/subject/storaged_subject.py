@@ -144,6 +144,8 @@ class Subject(object):
                 if prop in self._cached[k]["deleted"]:
                     self._cached[k]["deleted"].remove(prop)
 
+        result = (value, old_value)
+
         if not muted and value != old_value:
             payload = {PayloadConst.PROPERTY_NAME: prop, PayloadConst.OLD_VALUE: old_value,
                        PayloadConst.VALUE: value}
@@ -158,7 +160,7 @@ class Subject(object):
                 # This ensures the event is emitted even without await,
                 # but allows caller to optionally: await subject.set(...)
                 task = asyncio.create_task(self._event_bus.emit(event_type, self, payload))
-                return AwaitableResult((value, old_value), task)
+                return AwaitableResult(result, task)
             except RuntimeError:
                 # No running loop - emit synchronously
                 try:
@@ -168,7 +170,8 @@ class Subject(object):
                     # No loop at all - create one
                     asyncio.run(self._event_bus.emit(event_type, self, payload))
 
-        return value, old_value
+        # Always return AwaitableResult for consistent API
+        return AwaitableResult(result)
 
     def set(self, prop, value, muted=False, use_cache=None):
         return self._set(prop, value, False, muted, use_cache)
@@ -260,11 +263,14 @@ class Subject(object):
                 except RuntimeError:
                     asyncio.run(self._event_bus.emit(event_type, self, payload))
 
+        # Always return AwaitableResult for consistent API
+        return AwaitableResult(None)
+
     def delete(self, prop, muted=False, use_cache=None):
-        self._delete(prop, False, muted, use_cache)
+        return self._delete(prop, False, muted, use_cache)
 
     def delete_ext(self, prop, use_cache=None):
-        self._delete(prop, True, False, use_cache)
+        return self._delete(prop, True, False, use_cache)
 
 
     def get_ext_props(self):
@@ -304,7 +310,8 @@ class Subject(object):
             except RuntimeError:
                 asyncio.run(self._event_bus.emit(event_type, self, props))
 
-        return self
+        # Always return AwaitableResult for consistent API
+        return AwaitableResult(self)
 
     def store(self):
 
