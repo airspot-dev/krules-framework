@@ -1,8 +1,37 @@
 import inspect
+import asyncio
 
 import wrapt
 
 from krules_core.subject import SubjectProperty, SubjectExtProperty, PayloadConst, PropertyType
+
+
+class AwaitableResult:
+    """
+    Wrapper that allows optional await on subject operations.
+
+    This enables transparent usage in both sync and async contexts:
+    - Sync: result = subject.set("prop", value)
+    - Async: result = await subject.set("prop", value)
+
+    When awaited, ensures all event handlers complete before returning.
+    """
+    def __init__(self, result, coro=None):
+        self._result = result
+        self._coro = coro
+
+    def __await__(self):
+        """Allow: await subject.set(...)"""
+        if self._coro:
+            return self._coro.__await__()
+        # No coroutine, return result immediately
+        async def noop():
+            return self._result
+        return noop().__await__()
+
+    def __iter__(self):
+        """Allow: new_val, old_val = subject.set(...)"""
+        return iter(self._result)
 
 
 class Subject(object):
@@ -120,15 +149,16 @@ class Subject(object):
                        PayloadConst.VALUE: value}
 
             # Emit property change event using injected event bus
-            import asyncio
-
             event_type = "subject-property-changed"
 
             # Try to emit async, fallback to sync if needed
             try:
                 loop = asyncio.get_running_loop()
-                # Already in async context - schedule emission
-                asyncio.create_task(self._event_bus.emit(event_type, self, payload))
+                # Already in async context - schedule task and return awaitable
+                # This ensures the event is emitted even without await,
+                # but allows caller to optionally: await subject.set(...)
+                task = asyncio.create_task(self._event_bus.emit(event_type, self, payload))
+                return AwaitableResult((value, old_value), task)
             except RuntimeError:
                 # No running loop - emit synchronously
                 try:
@@ -216,13 +246,13 @@ class Subject(object):
             payload = {PayloadConst.PROPERTY_NAME: prop}
 
             # Emit property deleted event using injected event bus
-            import asyncio
-
             event_type = "subject-property-deleted"
 
             try:
                 loop = asyncio.get_running_loop()
-                asyncio.create_task(self._event_bus.emit(event_type, self, payload))
+                # Schedule task and return awaitable for consistency
+                task = asyncio.create_task(self._event_bus.emit(event_type, self, payload))
+                return AwaitableResult(None, task)
             except RuntimeError:
                 try:
                     loop = asyncio.get_event_loop()
@@ -260,13 +290,13 @@ class Subject(object):
         self._storage.flush()
 
         # Emit flush event using injected event bus
-        import asyncio
-
         event_type = "subject-flushed"
 
         try:
             loop = asyncio.get_running_loop()
-            asyncio.create_task(self._event_bus.emit(event_type, self, props))
+            # Schedule task and return awaitable for consistency
+            task = asyncio.create_task(self._event_bus.emit(event_type, self, props))
+            return AwaitableResult(self, task)
         except RuntimeError:
             try:
                 loop = asyncio.get_event_loop()

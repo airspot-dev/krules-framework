@@ -21,7 +21,7 @@ import fnmatch
 import logging
 from typing import Callable, Any, Optional, List
 from dataclasses import dataclass
-from collections import defaultdict
+from krules_core.subject.storaged_subject import Subject
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class EventContext:
         new_value: New value (for property change events)
     """
     event_type: str
-    subject: Any
+    subject: str | Subject
     payload: dict
     property_name: Optional[str] = None
     old_value: Optional[Any] = None
