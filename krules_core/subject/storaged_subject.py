@@ -236,6 +236,9 @@ class Subject(object):
     def _delete(self, prop, extended, muted, use_cache):
         if use_cache is None:
             use_cache = self._use_cache
+
+        old_value = None
+
         if use_cache:
             if self._cached is None:
                 self._load()
@@ -243,6 +246,8 @@ class Subject(object):
             vals = self._cached[k]["values"]
             if prop not in vals:
                 raise AttributeError(prop)
+            # Capture old value before deletion
+            old_value = vals[prop]
             del vals[prop]
             for _set in ("created", "updated"):
                 if prop in self._cached[k][_set]:
@@ -250,6 +255,12 @@ class Subject(object):
             self._cached[k]["deleted"].add(prop)
         else:
             klass, k = extended and (SubjectExtProperty, PropertyType.EXTENDED) or (SubjectProperty, PropertyType.DEFAULT)
+            # Capture old value before deletion
+            try:
+                old_value = self._storage.get(klass(prop))
+            except AttributeError:
+                # Property doesn't exist, will be raised by delete()
+                pass
             self._storage.delete(klass(prop))
             if self._cached is not None:
                 if prop in self._cached[k]["values"]:
@@ -259,7 +270,10 @@ class Subject(object):
                         self._cached[k][_set].remove(prop)
 
         if not muted:
-            payload = {PayloadConst.PROPERTY_NAME: prop}
+            payload = {
+                PayloadConst.PROPERTY_NAME: prop,
+                PayloadConst.OLD_VALUE: old_value
+            }
 
             # Emit property deleted event using injected event bus
             event_type = "subject-property-deleted"

@@ -116,13 +116,14 @@ class TestEventTypeConstants:
 
     @pytest.mark.asyncio
     async def test_property_deleted_event_emitted(self):
-        """Subject property deletions should emit SUBJECT_PROPERTY_DELETED events"""
+        """Subject property deletions should emit SUBJECT_PROPERTY_DELETED events with old_value"""
         deletions = []
 
         @on(event_types.SUBJECT_PROPERTY_DELETED)
         async def handler(ctx: EventContext):
             deletions.append({
                 "property": ctx.property_name,
+                "old_value": ctx.old_value,
                 "subject_name": ctx.subject.name
             })
 
@@ -143,12 +144,14 @@ class TestEventTypeConstants:
 
         assert len(deletions) == 2
 
-        # First deletion
+        # First deletion - should include old value
         assert deletions[0]["property"] == "temp_token"
+        assert deletions[0]["old_value"] == "abc123"
         assert deletions[0]["subject_name"] == "user-456"
 
-        # Second deletion
+        # Second deletion - should include old value
         assert deletions[1]["property"] == "email"
+        assert deletions[1]["old_value"] == "user@example.com"
         assert deletions[1]["subject_name"] == "user-456"
 
     @pytest.mark.asyncio
