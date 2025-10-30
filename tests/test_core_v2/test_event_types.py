@@ -52,25 +52,32 @@ class TestEventTypeConstants:
         # Constants should exist and be strings
         assert hasattr(event_types, "SUBJECT_PROPERTY_CHANGED")
         assert hasattr(event_types, "SUBJECT_PROPERTY_DELETED")
-        assert hasattr(event_types, "SUBJECT_FLUSHED")
+        assert hasattr(event_types, "SUBJECT_DELETED")
+        assert hasattr(event_types, "SUBJECT_FLUSHED")  # Legacy alias
 
         assert isinstance(event_types.SUBJECT_PROPERTY_CHANGED, str)
         assert isinstance(event_types.SUBJECT_PROPERTY_DELETED, str)
+        assert isinstance(event_types.SUBJECT_DELETED, str)
         assert isinstance(event_types.SUBJECT_FLUSHED, str)
 
         # Verify actual values
         assert event_types.SUBJECT_PROPERTY_CHANGED == "subject-property-changed"
         assert event_types.SUBJECT_PROPERTY_DELETED == "subject-property-deleted"
-        assert event_types.SUBJECT_FLUSHED == "subject-flushed"
+        assert event_types.SUBJECT_DELETED == "subject-deleted"
+
+        # Legacy alias SUBJECT_FLUSHED should point to "subject-deleted"
+        assert event_types.SUBJECT_FLUSHED == "subject-deleted"
 
         # Legacy aliases should also exist
         assert hasattr(event_types, "SubjectPropertyChanged")
         assert hasattr(event_types, "SubjectPropertyDeleted")
-        assert hasattr(event_types, "SubjectFlushed")
+        assert hasattr(event_types, "SubjectDeleted")
+        assert hasattr(event_types, "SubjectFlushed")  # Legacy alias
 
         # Aliases should equal their corresponding constants
         assert event_types.SubjectPropertyChanged == event_types.SUBJECT_PROPERTY_CHANGED
         assert event_types.SubjectPropertyDeleted == event_types.SUBJECT_PROPERTY_DELETED
+        assert event_types.SubjectDeleted == event_types.SUBJECT_DELETED
         assert event_types.SubjectFlushed == event_types.SUBJECT_FLUSHED
 
     @pytest.mark.asyncio

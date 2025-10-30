@@ -19,4 +19,7 @@ The decorators @on() accept strings directly.
 # Built-in event types (emitted automatically by the Subject system)
 SUBJECT_PROPERTY_CHANGED = SubjectPropertyChanged = "subject-property-changed"
 SUBJECT_PROPERTY_DELETED = SubjectPropertyDeleted = "subject-property-deleted"
-SUBJECT_FLUSHED = SubjectFlushed = "subject-flushed"
+SUBJECT_DELETED = SubjectDeleted = "subject-deleted"
+
+# Legacy alias (deprecated in 2.0.0)
+SUBJECT_FLUSHED = SubjectFlushed = "subject-deleted"  # Renamed: flush() deletes the subject

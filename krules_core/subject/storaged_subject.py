@@ -313,6 +313,19 @@ class Subject(object):
         return self._event_info.copy()
 
     def flush(self):
+        """
+        Flush (delete) the subject from storage.
+
+        This method:
+        1. Emits subject-property-deleted event for each property
+        2. Deletes the subject from storage
+        3. Emits subject-deleted event with final snapshot
+        4. Resets the cache
+
+        Returns:
+            AwaitableResult(self) - can be awaited to ensure events complete
+        """
+        # Collect snapshot before deletion
         props = {
             "ext_props": self.get_ext_props(),
             "props": {},
@@ -320,22 +333,50 @@ class Subject(object):
         for k in self:
             props["props"][k] = self.get(k)
 
+        async def _emit_deletion_events():
+            """Emit property-deleted events for all properties, then subject-deleted"""
+            from krules_core.subject import PayloadConst
+
+            # Emit subject-property-deleted for each default property
+            for prop_name, prop_value in props["props"].items():
+                payload = {
+                    PayloadConst.PROPERTY_NAME: prop_name,
+                    PayloadConst.OLD_VALUE: prop_value
+                }
+                await self._event_bus.emit("subject-property-deleted", self, payload)
+
+            # Emit subject-property-deleted for each extended property
+            for prop_name, prop_value in props["ext_props"].items():
+                payload = {
+                    PayloadConst.PROPERTY_NAME: prop_name,
+                    PayloadConst.OLD_VALUE: prop_value
+                }
+                await self._event_bus.emit("subject-property-deleted", self, payload)
+
+            # Finally emit subject-deleted with snapshot
+            await self._event_bus.emit("subject-deleted", self, props)
+
+            # Return self for AwaitableResult
+            return self
+
+        # Delete from storage
         self._storage.flush()
 
-        # Emit flush event using injected event bus
-        event_type = "subject-flushed"
+        # Reset cache after deletion
+        self._cached = None
 
+        # Emit events
         try:
             loop = asyncio.get_running_loop()
             # Schedule task and return awaitable for consistency
-            task = asyncio.create_task(self._event_bus.emit(event_type, self, props))
+            task = asyncio.create_task(_emit_deletion_events())
             return AwaitableResult(self, task)
         except RuntimeError:
             try:
                 loop = asyncio.get_event_loop()
-                loop.run_until_complete(self._event_bus.emit(event_type, self, props))
+                loop.run_until_complete(_emit_deletion_events())
             except RuntimeError:
-                asyncio.run(self._event_bus.emit(event_type, self, props))
+                asyncio.run(_emit_deletion_events())
 
         # Always return AwaitableResult for consistent API
         return AwaitableResult(self)
