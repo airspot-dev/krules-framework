@@ -42,13 +42,18 @@ def create_dispatcher_middleware(dispatcher):
 
     Example:
         from krules_cloudevents_pubsub.middleware import create_dispatcher_middleware
-        from krules_core import get_event_bus
+        from krules_core.container import KRulesContainer
         from krules_core.route.router import DispatchPolicyConst
 
-        # With dependency injection
-        middleware = create_dispatcher_middleware(dispatcher)
-        bus = get_event_bus()
-        bus.add_middleware(middleware)
+        # Create container
+        container = KRulesContainer()
+
+        # Create and register dispatcher middleware (factory pattern)
+        dispatcher_mw = create_dispatcher_middleware(dispatcher)
+        container.event_bus().add_middleware(dispatcher_mw)
+
+        # Get handlers (decorators and emit function)
+        on, when, middleware, emit = container.handlers()
 
         # In handlers
         await ctx.emit("alert.critical", topic="alerts")  # DIRECT (default)

@@ -12,17 +12,23 @@
 """
 KRules Framework 2.0 - Modern Event-Driven Application Framework
 
-A complete rewrite focusing on simplicity, type safety, and async-first design.
+A complete rewrite focusing on dependency injection, type safety, and async-first design.
 
 Key features:
+- Container-based dependency injection (KRulesContainer)
 - Decorator-based event handlers (@on, @when)
 - Dynamic subject system with persistent state
 - Async/await native support
-- Optional type hints for IDE support
 - Multiple storage backends (Redis, SQLite, etc.)
 
 Quick Start:
-    from krules_core import on, when, subject_factory
+    from krules_core.container import KRulesContainer
+
+    # Create container
+    container = KRulesContainer()
+
+    # Get handlers (decorators and emit function) bound to container's event bus
+    on, when, middleware, emit = container.handlers()
 
     # Define event handlers
     @on("user.login")
@@ -31,25 +37,24 @@ Quick Start:
         user = ctx.subject
         user.set("last_login", datetime.now())
         user.set("login_count", lambda c: c + 1)
-        await ctx.emit("user.logged-in")
+        await emit("user.logged-in", ctx.subject)
 
     # React to property changes
     @on("subject-property-changed")
     @when(lambda ctx: ctx.property_name == "temperature")
     @when(lambda ctx: ctx.new_value > 80)
     async def on_overheat(ctx):
-        await ctx.emit("alert.overheat", {
+        await emit("alert.overheat", ctx.subject, {
             "device": ctx.subject.name,
             "temp": ctx.new_value
         })
 
     # Use subjects
-    user = subject_factory("user-123")
+    user = container.subject("user-123")
     user.set("status", "active")
     user.set("email", "user@example.com")
 
     # Emit events
-    from krules_core.handlers import emit
     await emit("user.login", user, {"ip": "1.2.3.4"})
 
 Migration from 1.x:
@@ -57,44 +62,28 @@ Migration from 1.x:
 """
 
 # Core event system
-from .event_bus import EventBus, EventContext, get_event_bus, set_event_bus, reset_event_bus
-from .handlers import on, when, middleware, emit
+from .event_bus import EventBus, EventContext
 
 # Subject system
 from .subject.storaged_subject import Subject
 from .subject import PayloadConst, PropertyType, SubjectProperty, SubjectExtProperty
 
-# Providers
-from .providers import subject_factory, subject_storage_factory, configs_factory
-
-# Container
-from krules_core.container import KRulesContainer
+# Container (PRIMARY API)
+from .container import KRulesContainer
 
 # Version
 __version__ = "2.0.0"
 
 __all__ = [
-    # Event handling
-    "on",
-    "when",
-    "middleware",
-    "emit",
+    # Container (PRIMARY API - use this)
+    "KRulesContainer",
+    # Event system
     "EventContext",
     "EventBus",
-    "get_event_bus",
-    "set_event_bus",
-    "reset_event_bus",
     # Subjects
     "Subject",
-    "subject_factory",
     "PayloadConst",
     "PropertyType",
     "SubjectProperty",
     "SubjectExtProperty",
-    # Storage
-    "subject_storage_factory",
-    # Config
-    "configs_factory",
-    # Container
-    "KRulesContainer",
 ]

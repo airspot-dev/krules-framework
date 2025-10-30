@@ -38,10 +38,12 @@ class EventContext:
         property_name: Property name (for property change events)
         old_value: Previous value (for property change events)
         new_value: New value (for property change events)
+        _event_bus: EventBus instance (container-managed, required)
     """
     event_type: str
     subject: str | Subject
     payload: dict
+    _event_bus: 'EventBus'
     property_name: Optional[str] = None
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
@@ -73,7 +75,7 @@ class EventContext:
         **extra
     ):
         """
-        Emit a new event.
+        Emit a new event using the container's event bus.
 
         Args:
             event_type: Type of event to emit
@@ -89,7 +91,7 @@ class EventContext:
         if subject is None:
             subject = self.subject
 
-        await get_event_bus().emit(event_type, subject, payload, **extra)
+        await self._event_bus.emit(event_type, subject, payload, **extra)
 
 
 @dataclass
@@ -229,7 +231,8 @@ class EventBus:
         ctx = EventContext(
             event_type=event_type,
             subject=subject,
-            payload=payload
+            payload=payload,
+            _event_bus=self  # Pass self for container-aware ctx.emit()
         )
 
         # Store extra kwargs in context metadata for middleware access
@@ -277,27 +280,3 @@ class EventBus:
             next_func = wrapped
 
         await next_func()
-
-
-# Global event bus instance
-_global_event_bus: Optional[EventBus] = None
-
-
-def get_event_bus() -> EventBus:
-    """Get or create the global event bus instance"""
-    global _global_event_bus
-    if _global_event_bus is None:
-        _global_event_bus = EventBus()
-    return _global_event_bus
-
-
-def set_event_bus(bus: EventBus):
-    """Set the global event bus instance (for testing/custom setup)"""
-    global _global_event_bus
-    _global_event_bus = bus
-
-
-def reset_event_bus():
-    """Reset the global event bus (for testing)"""
-    global _global_event_bus
-    _global_event_bus = EventBus()

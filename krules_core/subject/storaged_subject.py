@@ -41,37 +41,50 @@ class Subject(object):
     Needs a storage strategy implementation
     """
 
-    def __init__(self, name, event_info={}, event_data=None, use_cache_default=True, storage=None, event_bus=None):
+    def __init__(self, name, storage, event_bus, event_info=None, event_data=None, use_cache_default=True):
         """
         Initialize a Subject.
 
         Args:
             name: Subject name/identifier
+            storage: Storage factory provider (REQUIRED - use KRulesContainer.subject())
+            event_bus: EventBus instance (REQUIRED - use KRulesContainer.subject())
             event_info: Event information dictionary
             event_data: Event data
             use_cache_default: Whether to use caching by default
-            storage: Storage factory provider (if None, uses global subject_storage_factory)
-            event_bus: EventBus instance (if None, uses global get_event_bus())
+
+        Example:
+            # Use KRulesContainer (recommended)
+            from krules_core.container import KRulesContainer
+            container = KRulesContainer()
+            subject = container.subject("user-123")
+
+            # Direct instantiation (advanced use only)
+            from krules_core.subject.storaged_subject import Subject
+            from krules_core.subject.empty_storage import EmptySubjectStorage
+            from krules_core.event_bus import EventBus
+
+            storage = EmptySubjectStorage
+            event_bus = EventBus()
+            subject = Subject("user-123", storage=storage, event_bus=event_bus)
         """
+        if storage is None:
+            raise ValueError(
+                "storage parameter is required. Use KRulesContainer.subject() instead of "
+                "direct Subject instantiation. Example: container.subject('name')"
+            )
+
+        if event_bus is None:
+            raise ValueError(
+                "event_bus parameter is required. Use KRulesContainer.subject() instead of "
+                "direct Subject instantiation. Example: container.subject('name')"
+            )
+
         self.name = name
         self._use_cache = use_cache_default
-
-        # Dependency injection: accept storage or fallback to global provider
-        if storage is None:
-            # Backward compatibility: use global provider
-            from krules_core.providers import subject_storage_factory
-            storage = subject_storage_factory
-
-        self._storage = storage(name, event_info=event_info, event_data=event_data)
-        self._event_info = event_info
+        self._storage = storage(name, event_info=event_info or {}, event_data=event_data)
+        self._event_info = event_info or {}
         self._cached = None
-
-        # Dependency injection: accept event_bus or fallback to global
-        if event_bus is None:
-            # Backward compatibility: use global event bus
-            from krules_core.event_bus import get_event_bus
-            event_bus = get_event_bus()
-
         self._event_bus = event_bus
 
     def __str__(self):

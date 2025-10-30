@@ -35,86 +35,11 @@ Example:
 """
 
 from dependency_injector import containers, providers
-from krules_core.subject.empty_storage import EmptySubjectStorage
+from krules_core.subject.empty_storage import create_empty_storage
 from krules_core.subject.storaged_subject import Subject
 from krules_core.event_bus import EventBus
+from krules_core.handlers import create_handlers
 from redis_subjects_storage.storage_impl import create_redis_storage
-
-
-def _create_decorators(event_bus):
-    """
-    Factory function for creating @on and @when decorators bound to an event bus.
-
-    This function is injected with an EventBus instance and returns decorator
-    functions that register handlers on that specific bus.
-
-    Args:
-        event_bus: EventBus instance (injected by container)
-
-    Returns:
-        tuple: (on, when) decorator functions
-
-    Example:
-        # In container
-        decorators = providers.Callable(_create_decorators, event_bus=event_bus)
-
-        # In handlers
-        on, when = container.krules.decorators()
-    """
-    def on(*event_patterns):
-        """
-        Register handler on the injected event bus.
-
-        Args:
-            *event_patterns: Event patterns to match (supports glob)
-
-        Example:
-            @on("user.login")
-            @on("user.*")  # Glob pattern
-            async def handler(ctx): pass
-        """
-        def decorator(func):
-            pending_filters = getattr(func, "_krules_pending_filters", [])
-            handler = event_bus.register(func, list(event_patterns), filters=pending_filters)
-            func._krules_handler = handler
-
-            if hasattr(func, "_krules_pending_filters"):
-                delattr(func, "_krules_pending_filters")
-
-            return func
-
-        return decorator
-
-    def when(*conditions):
-        """
-        Add filter conditions to handler.
-
-        Must be used with @on decorator. Multiple @when can be stacked.
-
-        Args:
-            *conditions: Filter functions returning bool
-
-        Example:
-            @on("user.login")
-            @when(lambda ctx: ctx.subject.get("active"))
-            @when(lambda ctx: ctx.payload.get("role") == "admin")
-            async def handler(ctx): pass
-        """
-        def decorator(func):
-            if hasattr(func, "_krules_handler"):
-                # Handler already registered - add filters directly
-                func._krules_handler.filters.extend(conditions)
-            else:
-                # Store pending filters (for when @when is before @on)
-                if not hasattr(func, "_krules_pending_filters"):
-                    func._krules_pending_filters = []
-                func._krules_pending_filters.extend(conditions)
-
-            return func
-
-        return decorator
-
-    return on, when
 
 
 class KRulesContainer(containers.DeclarativeContainer):
@@ -126,30 +51,29 @@ class KRulesContainer(containers.DeclarativeContainer):
     # Must be defined FIRST (used by subject and decorators)
     event_bus = providers.Singleton(EventBus)
 
-    #subject_storage = providers.Factory(EmptySubjectStorage)
-    subject_storage = providers.Selector(
-        config.storage_provider,
-        empty=providers.Factory(EmptySubjectStorage),
-        redis=providers.Callable(
-            create_redis_storage,
-            redis_url=config.storage_redis.url,
-            redis_prefix=config.storage_redis.key_prefix,
-        )
-    )
+    # Subject Storage Factory
+    # This is a CALLABLE that creates storage instances (not a storage instance itself)
+    # Subject.__init__ calls: storage(name, event_info, event_data)
+    # Default: create_empty_storage() factory function (for testing/development)
+    # Override with callable for production:
+    #   container.subject_storage.override(providers.Object(create_redis_storage(...)))
+    subject_storage = providers.Callable(create_empty_storage)
 
     # Subject Factory
-    # Creates Subject instances with injected storage and event_bus dependencies
-    # Both are passed explicitly following dependency injection pattern
+    # Creates Subject instances with injected storage factory and event_bus dependencies
+    # storage is a CALLABLE (class or function), not an instance
     subject = providers.Factory(
         Subject,
         storage=subject_storage,
         event_bus=event_bus
     )
 
-    # Decorators Factory
-    # Creates @on and @when decorators bound to the event bus (dependency injected)
-    decorators = providers.Callable(
-        _create_decorators,
+    # Handlers Factory
+    # Creates @on, @when, @middleware decorators and emit() function bound to the event bus
+    # Returns tuple: (on, when, middleware, emit)
+    # Note: despite the name, emit is a function not a decorator
+    handlers = providers.Callable(
+        create_handlers,
         event_bus=event_bus
     )
 

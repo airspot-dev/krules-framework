@@ -14,25 +14,30 @@ Tests for Subject system in KRules 2.0
 """
 
 import pytest
-from krules_core import subject_factory, reset_event_bus
-from krules_core.providers import subject_storage_factory
-from krules_core.subject.empty_storage import EmptySubjectStorage
-from dependency_injector import providers
+from krules_core.container import KRulesContainer
+
+
+# Global container for the test module
+container = None
 
 
 @pytest.fixture(autouse=True)
 def setup():
-    """Reset before each test"""
-    reset_event_bus()
-    subject_storage_factory.override(
-        providers.Factory(lambda *args, **kwargs: EmptySubjectStorage())
-    )
+    """Create fresh container before each test"""
+    global container
+
+    # Create new container for each test (isolation)
+    container = KRulesContainer()
+
     yield
+
+    # Cleanup
+    container = None
 
 
 def test_subject_dynamic_properties():
     """Subject should support dynamic properties"""
-    subject = subject_factory("test-subject")
+    subject = container.subject("test-subject")
 
     subject.set("name", "John")
     subject.set("age", 30)
@@ -45,7 +50,7 @@ def test_subject_dynamic_properties():
 
 def test_subject_lambda_values():
     """Subject.set() should support lambda for computed values"""
-    subject = subject_factory("counter")
+    subject = container.subject("counter")
 
     subject.set("count", 0)
     subject.set("count", lambda c: c + 1)
@@ -57,7 +62,7 @@ def test_subject_lambda_values():
 
 def test_subject_default_values():
     """Subject.get() should support default values"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     # Property doesn't exist - should return default
     value = subject.get("missing", default="default-value")
@@ -70,7 +75,7 @@ def test_subject_default_values():
 
 def test_subject_extended_properties():
     """Subject should support extended properties"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     subject.set_ext("metadata", {"key": "value"})
     subject.set_ext("tags", ["tag1", "tag2"])
@@ -85,7 +90,7 @@ def test_subject_extended_properties():
 
 def test_subject_iteration():
     """Subject should be iterable over property names"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     subject.set("prop1", "value1")
     subject.set("prop2", "value2")
@@ -100,7 +105,7 @@ def test_subject_iteration():
 
 def test_subject_contains():
     """Subject should support 'in' operator"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     subject.set("exists", True)
 
@@ -110,7 +115,7 @@ def test_subject_contains():
 
 def test_subject_length():
     """Subject should report number of properties"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     assert len(subject) == 0
 
@@ -124,7 +129,7 @@ def test_subject_length():
 
 def test_subject_dict_export():
     """Subject.dict() should export all properties"""
-    subject = subject_factory("device-123")
+    subject = container.subject("device-123")
 
     subject.set("temperature", 75)
     subject.set("status", "ok")
@@ -140,7 +145,7 @@ def test_subject_dict_export():
 
 def test_subject_muted_properties():
     """Muted properties should not emit change events"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     # Normal set emits event
     subject.set("normal", "value")
@@ -155,7 +160,7 @@ def test_subject_muted_properties():
 
 def test_subject_delete():
     """Subject should support property deletion"""
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     subject.set("temp", 75)
     assert "temp" in subject

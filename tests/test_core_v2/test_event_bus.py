@@ -16,28 +16,33 @@ Tests for KRules 2.0 event bus and handlers
 import pytest
 from datetime import datetime
 
-from krules_core import (
-    on,
-    when,
-    middleware,
-    emit,
-    subject_factory,
-    EventContext,
-    reset_event_bus,
-)
-from krules_core.providers import subject_storage_factory
-from krules_core.subject.empty_storage import EmptySubjectStorage
-from dependency_injector import providers
+from krules_core.container import KRulesContainer
+from krules_core import EventContext
+
+
+# Global container and decorators for the test module
+container = None
+on = None
+when = None
+middleware = None
+emit = None
 
 
 @pytest.fixture(autouse=True)
 def setup():
-    """Reset event bus and storage before each test"""
-    reset_event_bus()
-    subject_storage_factory.override(
-        providers.Factory(lambda *args, **kwargs: EmptySubjectStorage())
-    )
+    """Create fresh container before each test"""
+    global container, on, when, middleware, emit
+
+    # Create new container for each test (isolation)
+    container = KRulesContainer()
+
+    # Get handlers from container
+    on, when, middleware, emit = container.handlers()
+
     yield
+
+    # Cleanup
+    container = None
 
 
 @pytest.mark.asyncio
@@ -49,7 +54,7 @@ async def test_basic_handler():
     async def handler(ctx: EventContext):
         results.append(ctx.event_type)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
     await emit("test.event", subject)
 
     assert len(results) == 1
@@ -66,7 +71,7 @@ async def test_handler_with_filter():
     async def handler(ctx: EventContext):
         executed.append(True)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     # Filter fails
     await emit("test.filtered", subject, {"allowed": False})
@@ -88,7 +93,7 @@ async def test_multiple_filters():
     async def handler(ctx: EventContext):
         executed.append(True)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     await emit("test.multi", subject, {"check1": True, "check2": False})
     assert len(executed) == 0
@@ -106,7 +111,7 @@ async def test_glob_patterns():
     async def handler(ctx: EventContext):
         events.append(ctx.event_type)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     await emit("user.created", subject)
     await emit("user.updated", subject)
@@ -128,7 +133,7 @@ async def test_wildcard_handler():
     async def handler(ctx: EventContext):
         all_events.append(ctx.event_type)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
 
     await emit("event1", subject)
     await emit("event2", subject)
@@ -150,7 +155,7 @@ async def test_subject_property_changes_emit_events():
             "new": ctx.new_value
         })
 
-    subject = subject_factory("device-123")
+    subject = container.subject("device-123")
     subject.set("temperature", 75)
     subject.set("temperature", 85)
 
@@ -182,7 +187,7 @@ async def test_property_change_filtering():
     async def on_status(ctx: EventContext):
         status_changes.append(ctx.new_value)
 
-    subject = subject_factory("device")
+    subject = container.subject("device")
     subject.set("temperature", 75)
     subject.set("status", "ok")
     subject.set("temperature", 85)
@@ -216,7 +221,7 @@ async def test_context_emit_triggers_handlers():
     async def third(ctx: EventContext):
         sequence.append("third")
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
     await emit("first", subject)
 
     assert sequence == ["first", "second", "third"]
@@ -232,7 +237,7 @@ async def test_sync_handlers():
         results.append("sync")
         ctx.subject.set("value", 42)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
     await emit("sync.event", subject)
 
     assert len(results) == 1
@@ -255,7 +260,7 @@ async def test_middleware():
     async def handler(ctx: EventContext):
         handler_called.append(True)
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
     await emit("test.event", subject)
 
     assert len(middleware_called) == 2
@@ -281,7 +286,7 @@ async def test_multiple_handlers_same_event():
     async def handler3(ctx: EventContext):
         results.append("handler3")
 
-    subject = subject_factory("test")
+    subject = container.subject("test")
     await emit("shared.event", subject)
 
     assert len(results) == 3
@@ -293,7 +298,7 @@ async def test_multiple_handlers_same_event():
 @pytest.mark.asyncio
 async def test_subject_lambda_values():
     """Subject.set() should support lambda functions"""
-    subject = subject_factory("counter")
+    subject = container.subject("counter")
     subject.set("count", 0)
     subject.set("count", lambda c: c + 1)
     subject.set("count", lambda c: c + 1)
@@ -318,7 +323,7 @@ async def test_reusable_filters():
     async def admin_action(ctx: EventContext):
         executed.append("admin")
 
-    subject = subject_factory("user-123")
+    subject = container.subject("user-123")
     subject.set("status", "active")
 
     # Not admin
