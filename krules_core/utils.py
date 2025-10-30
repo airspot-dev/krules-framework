@@ -8,34 +8,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import socket
 
-from krules_core import RuleConst
 import os
-
-from krules_core.models import Rule
-
-
-def load_rules_from_rulesdata(rulesdata):
-
-    from krules_core.core import RuleFactory
-
-    description = ""
-    for el in rulesdata:
-        if isinstance(el, str):
-            description = el
-        elif isinstance(el, Rule) or isinstance(el, dict):
-            if isinstance(el, Rule):
-                el = el.model_dump()
-            if len(description):
-                el[RuleConst.DESCRIPTION] = description
-            if el.get(RuleConst.SUBSCRIBE_TO, None) is None:
-                el[RuleConst.SUBSCRIBE_TO] = "*"
-            RuleFactory.create(**el)
-            description = ""
+import socket
 
 
 def get_source():
+    """
+    Get CloudEvents source identifier.
+
+    Returns source from environment variables in this order:
+    1. CE_SOURCE (if set)
+    2. K_SERVICE (if running on Knative)
+    3. hostname (fallback)
+    """
     source = os.environ.get("CE_SOURCE")
     if source is None:
         if "K_SERVICE" in os.environ:

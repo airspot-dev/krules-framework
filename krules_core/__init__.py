@@ -67,12 +67,6 @@ from .subject import PayloadConst, PropertyType, SubjectProperty, SubjectExtProp
 # Providers
 from .providers import subject_factory, subject_storage_factory, configs_factory
 
-# Legacy compatibility (deprecated, will be removed)
-class RuleConst:
-    """Deprecated - only for backward compatibility during migration"""
-    PAYLOAD_DIFFS = "payload_diffs"
-    # Add other constants if needed during migration
-
 # Container
 from krules_core.container import KRulesContainer
 
