@@ -80,6 +80,9 @@ test = [
     "httpx>=0.27.2",
     "anyio>=4.11.0",
     "pytest-asyncio>=1.2.0",
+    # PubSub dependencies for integration tests
+    "google-cloud-pubsub>=2.26.1",
+    "cloudevents==1.11.0",
 ]
 
 [build-system]

@@ -17,7 +17,7 @@ Integrates CloudEventsDispatcher with the modern EventBus middleware system.
 
 import logging
 from typing import Callable
-from krules_core.route.router import DispatchPolicyConst
+from .dispatch_policy import DispatchPolicyConst
 
 logger = logging.getLogger(__name__)
 
