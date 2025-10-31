@@ -384,6 +384,203 @@ subject.flush()
 subject.dict()
 ```
 
+## Module Changes and Removals
+
+### PubSub Integration: krules_pubsub → krules_cloudevents_pubsub
+
+The separate `krules_pubsub` module has been **merged** into `krules_cloudevents_pubsub` with a modern container-first architecture.
+
+**Before (1.x):**
+```python
+from krules_pubsub.subscriber import PubSubSubscriber
+
+subscriber = PubSubSubscriber()
+subscriber.start()
+```
+
+**After (2.0):**
+```python
+from krules_core.container import KRulesContainer
+from krules_cloudevents_pubsub import PubSubSubscriber
+
+# Initialize container
+container = KRulesContainer()
+
+# Create subscriber with dependency injection
+subscriber = PubSubSubscriber(
+    event_bus=container.event_bus(),
+    subject_factory=container.subject,
+)
+
+# Define handlers using decorators
+on, when, middleware, emit = container.handlers()
+
+@on("order.created")
+async def handle_order(ctx):
+    print(f"Order: {ctx.subject.name}")
+
+# Start subscriber
+await subscriber.start()
+```
+
+**Import changes:**
+- ❌ `from krules_pubsub.subscriber import PubSubSubscriber`
+- ✅ `from krules_cloudevents_pubsub import PubSubSubscriber`
+
+### krules_env Removed
+
+The `krules_env` module has been **completely removed**. It was a legacy initialization layer that is no longer needed with KRulesContainer.
+
+**Before (1.x):**
+```python
+# app.py
+from krules_env import init
+
+init()  # Magic global initialization
+
+# ruleset.py
+rulesdata = [...]  # Rules auto-loaded by krules_env
+```
+
+**After (2.0):**
+```python
+# main.py - Explicit initialization
+from krules_core.container import KRulesContainer
+
+# Create container
+container = KRulesContainer()
+
+# Get handler decorators
+on, when, middleware, emit = container.handlers()
+
+# Define handlers in the same file or import them
+@on("user.created")
+async def handle_user(ctx):
+    ctx.subject.set("processed", True)
+
+# Application startup
+if __name__ == "__main__":
+    # Your application logic here
+    # Handlers are already registered via decorators
+    pass
+```
+
+**What replaced it:**
+- ❌ `krules_env.init()` - Use `KRulesContainer()` explicitly
+- ❌ Automatic ruleset loading - Use `@on`/`@when` decorators
+- ❌ Global state - Use container instance
+- ❌ Settings from `/krules/config` - Load settings directly in your code
+
+### Container-First Architecture
+
+KRules 2.0 uses **dependency injection** via `KRulesContainer` instead of global factory patterns.
+
+**Before (1.x):**
+```python
+from krules_core.providers import subject_factory, event_router_factory, configs_factory
+
+# Global factories
+subject = subject_factory("user-123")
+router = event_router_factory()
+configs = configs_factory()
+```
+
+**After (2.0):**
+```python
+from krules_core.container import KRulesContainer
+
+# Create container instance
+container = KRulesContainer()
+
+# Get dependencies from container
+subject = container.subject("user-123")
+event_bus = container.event_bus()
+on, when, middleware, emit = container.handlers()
+
+# Or use standalone functions (they use global container)
+from krules_core import subject_factory, emit
+subject = subject_factory("user-123")
+await emit("event.type", subject, {})
+```
+
+**Benefits:**
+- ✅ Explicit dependencies (no magic globals)
+- ✅ Easier testing (inject mocks via container)
+- ✅ Multiple containers in same process
+- ✅ Clear lifecycle management
+
+### CloudEvents Dispatchers
+
+Both HTTP and PubSub dispatchers now use modern middleware patterns.
+
+**HTTP Dispatcher (krules_cloudevents):**
+```python
+from krules_core.container import KRulesContainer
+from krules_cloudevents import CloudEventsDispatcher, create_dispatcher_middleware
+
+container = KRulesContainer()
+
+# Create HTTP dispatcher
+dispatcher = CloudEventsDispatcher(
+    dispatch_url="https://api.example.com/events",
+    source="my-service",
+    krules_container=container,
+)
+
+# Register middleware for transparent dispatch
+middleware_func = create_dispatcher_middleware(dispatcher)
+container.event_bus().add_middleware(middleware_func)
+
+# Use in handlers
+on, when, middleware, emit = container.handlers()
+
+@on("order.created")
+async def handle_order(ctx):
+    # Dispatch to external HTTP endpoint
+    await ctx.emit(
+        "order.confirmed",
+        {"amount": 100},
+        ctx.subject,
+        dispatch_url="https://external-service.com/events"
+    )
+```
+
+**PubSub Dispatcher (krules_cloudevents_pubsub):**
+```python
+from krules_core.container import KRulesContainer
+from krules_cloudevents_pubsub import CloudEventsDispatcher, create_dispatcher_middleware
+
+container = KRulesContainer()
+
+# Create PubSub dispatcher
+dispatcher = CloudEventsDispatcher(
+    project_id="my-project",
+    source="my-service",
+    krules_container=container,
+)
+
+# Register middleware
+middleware_func = create_dispatcher_middleware(dispatcher)
+container.event_bus().add_middleware(middleware_func)
+
+# Use in handlers
+on, when, middleware, emit = container.handlers()
+
+@on("order.created")
+async def handle_order(ctx):
+    # Publish to PubSub topic
+    await ctx.emit(
+        "order.confirmed",
+        {"amount": 100},
+        ctx.subject,
+        topic="projects/my-project/topics/orders"
+    )
+```
+
+**Dispatch policies:**
+- `DispatchPolicyConst.DIRECT` (default): External dispatch only, skip local handlers
+- `DispatchPolicyConst.BOTH`: External dispatch AND execute local handlers
+
 ## Removed Features
 
 - `RuleFactory.create()` - Use `@on` decorator
@@ -393,8 +590,10 @@ subject.dict()
 - `PayloadMatch`, `SubjectNameMatch` - Use lambdas
 - `SetSubjectProperty`, `SetPayloadProperty` - Use `ctx.subject.set()`, `ctx.payload[key] = value`
 - `Route` - Use `await ctx.emit()`
-- `event_router_factory` - Use `emit()` function
+- `event_router_factory` - Use `emit()` function or `container.event_bus()`
 - `proc_events_rx_factory` - No longer needed (use middleware for observability)
+- `krules_env` module - Use `KRulesContainer()` explicitly
+- `krules_pubsub` module - Merged into `krules_cloudevents_pubsub`
 - CEL expressions - Use Python lambdas
 - JSONPath in rules - Use Python dict access
 
