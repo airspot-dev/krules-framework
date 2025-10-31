@@ -1,100 +1,125 @@
-import logging
-from contextvars import ContextVar
-from typing import Optional
+"""
+KRules FastAPI Integration
 
-from dependency_injector import providers
-from fastapi import FastAPI, Request
-from rich.logging import RichHandler
+Provides KrulesApp - a FastAPI application pre-configured for KRules integration.
 
-from krules_core.providers import subject_factory
+Features:
+- Automatic CloudEvents HTTP receiver endpoint (POST /)
+- Container-first pattern (receives KRulesContainer as dependency)
 
-ctx_subjects = ContextVar('g_subjects', default=[])
+Example:
+    from dependency_injector import containers, providers
+    from krules_core.container import KRulesContainer
+    from krules_fastapi_env import KrulesApp
 
+    # Application container with KRules sub-container
+    class AppContainer(containers.DeclarativeContainer):
+        config = providers.Configuration()
+        krules = providers.Container(KRulesContainer, config=config.krules)
 
+    container = AppContainer()
+
+    # KrulesApp with injected krules container
+    app = KrulesApp(
+        krules_container=container.krules,
+        title="My KRules API"
+    )
+
+    # Lifespan management is application responsibility
+    @app.on_event("startup")
+    async def startup():
+        container.init_resources()
+        from my_app import handlers  # Register event handlers
+"""
+
+from fastapi import FastAPI
+from cloudevents.pydantic import CloudEvent
+
+from krules_core.container import KRulesContainer
 
 
 class KrulesApp(FastAPI):
+    """
+    FastAPI application with KRules integration.
 
-    @staticmethod
-    async def krules_middleware(request: Request, call_next):
-        # Code to be executed before the request is processed
-        ctx_subjects.set([])  # Initialize the request-specific list
+    Provides:
+    - CloudEvents HTTP receiver endpoint (POST /)
+    - Container-first dependency injection pattern
 
-        response = await call_next(request)
+    Args:
+        krules_container: KRulesContainer instance (dependency injected)
+        cloudevents_path: Path for CloudEvents receiver endpoint (default: "/")
+        *args, **kwargs: Passed to FastAPI.__init__
 
-        # Code to be executed after the request is processed
-        for sub in ctx_subjects.get():
-            sub.store()
-
-        return response
+    Note:
+        Subject persistence (.store()) must be called explicitly by the application.
+        For automatic persistence, use a custom middleware in your application.
+    """
 
     def __init__(
             self,
-            wrap_subjects: bool = True,
-            logger: Optional[logging.Logger] = None,
-            logger_name: str = "krules-app",
-            log_level: int = logging.INFO,
+            krules_container: KRulesContainer,
+            cloudevents_path: str = "/",
             *args, **kwargs,
     ) -> None:
-        super().__init__(
-            *args, **kwargs,
-        )
-        self.setup()
-        self.middleware("http")(self.krules_middleware)
+        super().__init__(*args, **kwargs)
 
-        # Set up the logger
-        if logger is not None:
-            self._logger = logger
-        else:
-            # Create default logger
-            self._logger = logging.getLogger(logger_name)
+        self._krules = krules_container
 
-            handler = RichHandler(
-                rich_tracebacks=True,  # Enable rich tracebacks
-                markup=True,  # Enable markup for log messages
-                show_time=True,  # Show time in log messages
-                show_path=True  # Show file path in log messages
+        # Register CloudEvents receiver endpoint
+        self._register_cloudevents_endpoint(cloudevents_path)
+
+    def _register_cloudevents_endpoint(self, path: str):
+        """
+        Register CloudEvents HTTP receiver endpoint.
+
+        Creates a POST endpoint that receives CloudEvents via HTTP and emits
+        them on the local EventBus. This is the HTTP equivalent of PubSub subscriber.
+
+        Args:
+            path: Endpoint path (e.g., "/" or "/events")
+        """
+        @self.post(path)
+        async def receive_cloudevent(event: CloudEvent):
+            """
+            Receive CloudEvent via HTTP POST and emit on EventBus.
+
+            Accepts CloudEvents in both binary and structured format.
+            Extracted event is emitted on the local EventBus, triggering
+            registered @on handlers.
+
+            Request Body:
+                CloudEvent (JSON) with required fields:
+                - type: Event type (e.g., "order.created")
+                - source: Event source identifier
+                - id: Event ID (auto-generated if not provided)
+                - subject: Subject name (REQUIRED for KRules)
+                Optional fields:
+                - data: Event payload (JSON)
+
+            Returns:
+                {"status": "accepted"}
+
+            Raises:
+                422: If subject is missing or empty (malformed request)
+            """
+            from fastapi import HTTPException
+
+            # Validate subject is present (required for KRules)
+            if not event.subject:
+                raise HTTPException(
+                    status_code=422,
+                    detail="CloudEvent 'subject' field is required for KRules events"
+                )
+
+            # Create Subject instance (like PubSub subscriber does)
+            subject = self._krules.subject(event.subject)
+
+            # Emit event on EventBus with Subject instance
+            await self._krules.event_bus().emit(
+                event_type=event.type,
+                subject=subject,
+                payload=event.data or {}
             )
-            self._logger.addHandler(handler)
-            self._logger.setLevel(log_level)
 
-        if wrap_subjects:
-            self._logger.info("Overriding subject_factory for wrapping")
-            subject_factory.override(
-                providers.Factory(lambda *_args, **_kw: _subjects_wrap(subject_factory.cls, self, *_args, **_kw)))
-        else:
-            self._logger.info("Subject wrapping is disabled")
-
-    @property
-    def logger(self) -> logging.Logger:
-        return self._logger
-
-    @logger.setter
-    def logger(self, logger: logging.Logger):
-        self._logger = logger
-
-
-def _subjects_wrap(subject_class, app, *args, **kwargs):
-    event_info = kwargs.pop("event_info", {})
-    subjects = ctx_subjects.get()  # Get the request-specific list
-
-    if event_info is None and len(subjects) > 0:
-        event_info = subjects[0].event_info()
-
-    subject = subject_class(*args, event_info=event_info, **kwargs)
-    subjects.append(subject)  # Append to the request-specific list
-    app.logger.debug("wrapped: {}".format(subject))
-    return subject
-
-
-# override wrap subjects defafult behaviour
-class KRulesApp(KrulesApp):
-    def __init__(
-            self,
-            wrap_subjects: bool = False,  # Changed default here
-            *args, **kwargs
-    ) -> None:
-        super().__init__(
-            wrap_subjects=wrap_subjects,
-            *args, **kwargs
-        )
+            return {"status": "accepted"}
