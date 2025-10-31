@@ -39,7 +39,6 @@ from krules_core.subject.empty_storage import create_empty_storage
 from krules_core.subject.storaged_subject import Subject
 from krules_core.event_bus import EventBus
 from krules_core.handlers import create_handlers
-from redis_subjects_storage.storage_impl import create_redis_storage
 
 
 class KRulesContainer(containers.DeclarativeContainer):
@@ -55,8 +54,10 @@ class KRulesContainer(containers.DeclarativeContainer):
     # This is a CALLABLE that creates storage instances (not a storage instance itself)
     # Subject.__init__ calls: storage(name, event_info, event_data)
     # Default: create_empty_storage() factory function (for testing/development)
-    # Override with callable for production:
-    #   container.subject_storage.override(providers.Object(create_redis_storage(...)))
+    # Override with callable for production (Redis example):
+    #   from redis_subjects_storage.storage_impl import create_redis_storage
+    #   redis_factory = create_redis_storage("redis://localhost:6379", "myapp:")
+    #   container.subject_storage.override(providers.Object(redis_factory))
     subject_storage = providers.Callable(create_empty_storage)
 
     # Subject Factory

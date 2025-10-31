@@ -55,7 +55,9 @@ class SubjectsRedisStorage(object):
         for prop in tuple(inserts)+tuple(updates):
             hset[f"{prop.type}{prop.name}"] = prop.json_value()
         with self._conn.pipeline() as pipe:
-            pipe.hset(skey, mapping=hset)
+            # Only call hset if there are properties to set
+            if hset:
+                pipe.hset(skey, mapping=hset)
             for pkey in [f"{el.type}{el.name}" for el in deletes]:
                 pipe.hdel(skey, pkey)
             pipe.execute()
