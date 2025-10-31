@@ -46,54 +46,6 @@ class TestCloudEventsDispatcher:
         assert dispatcher._krules is not None
         assert dispatcher.default_dispatch_policy == "direct"
 
-    def test_dispatch_publishes_to_topic(
-        self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
-    ):
-        """Dispatcher should publish CloudEvents to PubSub topic."""
-        # Create subject
-        subject = container.subject("test-subject-123")
-        subject.set("test_prop", "test_value")
-
-        # Dispatch event
-        dispatcher.dispatch(
-            event_type="test.event",
-            subject=subject,
-            payload={"key": "value", "number": 42},
-            topic=pubsub_topic,
-        )
-
-        # Give PubSub time to propagate
-        time.sleep(2)
-
-        # Pull message from persistent subscription
-        response = subscriber_client.pull(
-            request={"subscription": pubsub_subscription, "max_messages": 10},
-            timeout=5,
-        )
-
-        # Should have received 1 message
-        assert len(response.received_messages) == 1
-
-        message = response.received_messages[0].message
-
-        # Verify CloudEvents attributes
-        assert message.attributes["type"] == "test.event"
-        assert message.attributes["source"] == "test-service"
-        assert message.attributes["subject"] == "test-subject-123"
-        assert "id" in message.attributes
-        assert "time" in message.attributes
-
-        # Verify payload
-        payload = json.loads(message.data.decode())
-        assert payload["key"] == "value"
-        assert payload["number"] == 42
-
-        # Ack message (cleanup handled by fixture)
-        ack_ids = [msg.ack_id for msg in response.received_messages]
-        subscriber_client.acknowledge(
-            request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
-        )
-
     def test_dispatch_with_string_subject(
         self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):

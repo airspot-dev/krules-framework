@@ -116,5 +116,12 @@ exclude = [
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 python_files = "test_*.py"
-testpaths = ["tests/test_core_v2", "tests/test_subject"]
+testpaths = [
+    "tests/test_core_v2",
+    "tests/test_subject",
+    "tests/test_cloudevents",
+    "tests/test_cloudevents_pubsub",
+    "tests/test_redis_subjects_storage",
+    "tests/test_krules_fastapi_env"
+]
 addopts = "-v"
