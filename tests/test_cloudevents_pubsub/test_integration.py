@@ -78,6 +78,12 @@ class TestPublisherSubscriberIntegration:
         # Setup publisher handlers
         pub_on, pub_when, pub_middleware, pub_emit = publisher_container.handlers()
 
+        # Register no-op handler on publisher side (required for middleware to run)
+        @pub_on("order.confirmed")
+        async def noop_handler(ctx: EventContext):
+            """No-op handler - only external dispatch, no local processing"""
+            pass
+
         # Setup subscriber handlers
         sub_on, sub_when, sub_middleware, sub_emit = subscriber_container.handlers()
 
@@ -146,6 +152,12 @@ class TestPublisherSubscriberIntegration:
         # Publisher: Order creation service
         pub_on, pub_when, pub_middleware, pub_emit = publisher_container.handlers()
 
+        # Register no-op handler for order.confirmed (required for middleware to run)
+        @pub_on("order.confirmed")
+        async def noop_handler(ctx: EventContext):
+            """No-op handler - only external dispatch"""
+            pass
+
         # Subscriber: Payment processing service
         sub_on, sub_when, sub_middleware, sub_emit = subscriber_container.handlers()
 
@@ -181,11 +193,11 @@ class TestPublisherSubscriberIntegration:
             # Publish confirmation to payment service
             await ctx.emit(
                 "order.confirmed",
-                ctx.subject,
                 {
                     "amount": ctx.payload["amount"],
                     "currency": "USD",
                 },
+                ctx.subject,
                 topic=pubsub_topic,  # ← Goes to external service
             )
 
@@ -231,6 +243,13 @@ class TestPublisherSubscriberIntegration:
         its own storage. Only the subject name and event payload are shared.
         """
         pub_on, pub_when, pub_middleware, pub_emit = publisher_container.handlers()
+
+        # Register no-op handler (required for middleware to run)
+        @pub_on("test.event")
+        async def noop_handler(ctx: EventContext):
+            """No-op handler - only external dispatch"""
+            pass
+
         sub_on, sub_when, sub_middleware, sub_emit = subscriber_container.handlers()
 
         # Track subjects in subscriber
@@ -287,6 +306,15 @@ class TestPublisherSubscriberIntegration:
         """
         Test multiple subscribers receiving the same events (fan-out pattern).
         """
+        # Setup publisher handlers
+        pub_on, pub_when, pub_middleware, pub_emit = publisher_container.handlers()
+
+        # Register no-op handler (required for middleware to run)
+        @pub_on("broadcast.event")
+        async def noop_handler(ctx: EventContext):
+            """No-op handler - only external dispatch"""
+            pass
+
         # Create two subscriber services
         container1 = KRulesContainer()
         container2 = KRulesContainer()
@@ -305,19 +333,26 @@ class TestPublisherSubscriberIntegration:
         sub_path_1 = subscriber_client.subscription_path(pubsub_project, "sub-service-1")
         sub_path_2 = subscriber_client.subscription_path(pubsub_project, "sub-service-2")
 
-        try:
-            subscriber_client.create_subscription(
-                request={"name": sub_path_1, "topic": pubsub_topic}
-            )
-        except Exception:
-            pass
-
-        try:
-            subscriber_client.create_subscription(
-                request={"name": sub_path_2, "topic": pubsub_topic}
-            )
-        except Exception:
-            pass
+        # Create or purge subscriptions
+        for sub_path in [sub_path_1, sub_path_2]:
+            try:
+                subscriber_client.create_subscription(
+                    request={"name": sub_path, "topic": pubsub_topic}
+                )
+            except Exception:
+                # Subscription exists, purge old messages
+                try:
+                    response = subscriber_client.pull(
+                        request={"subscription": sub_path, "max_messages": 100},
+                        timeout=2,
+                    )
+                    if response.received_messages:
+                        ack_ids = [msg.ack_id for msg in response.received_messages]
+                        subscriber_client.acknowledge(
+                            request={"subscription": sub_path, "ack_ids": ack_ids}
+                        )
+                except Exception:
+                    pass  # Ignore purge errors
 
         # Setup handlers
         on1, _, _, _ = container1.handlers()
@@ -334,19 +369,21 @@ class TestPublisherSubscriberIntegration:
         async def service2_handler(ctx: EventContext):
             events2.append(ctx.payload["message"])
 
-        # Start subscribers
-        os.environ["SUBSCRIPTION_TEST"] = sub_path_1
-        task1 = asyncio.create_task(subscriber1.start())
-        del os.environ["SUBSCRIPTION_TEST"]
+        # Start subscribers individually with isolated env vars
+        # (subscriber scans ALL SUBSCRIPTION_* vars, so we need to set/unset individually)
+        os.environ["SUBSCRIPTION_SERVICE1"] = sub_path_1
+        await subscriber1.start()
+        del os.environ["SUBSCRIPTION_SERVICE1"]
+        task1 = None  # Already started, no task to track
 
-        os.environ["SUBSCRIPTION_TEST"] = sub_path_2
-        task2 = asyncio.create_task(subscriber2.start())
-        del os.environ["SUBSCRIPTION_TEST"]
+        os.environ["SUBSCRIPTION_SERVICE2"] = sub_path_2
+        await subscriber2.start()
+        del os.environ["SUBSCRIPTION_SERVICE2"]
+        task2 = None  # Already started, no task to track
 
         await asyncio.sleep(2)
 
         # Publisher emits one event
-        pub_on, pub_when, pub_middleware, pub_emit = publisher_container.handlers()
         subject = publisher_container.subject("broadcast")
 
         await pub_emit(
@@ -367,13 +404,24 @@ class TestPublisherSubscriberIntegration:
         # Cleanup
         await subscriber1.stop()
         await subscriber2.stop()
-        task1.cancel()
-        task2.cancel()
 
-        try:
-            await asyncio.gather(task1, task2)
-        except asyncio.CancelledError:
-            pass
+        # Purge and delete subscriptions
+        for sub_path in [sub_path_1, sub_path_2]:
+            try:
+                # Purge remaining messages
+                response = subscriber_client.pull(
+                    request={"subscription": sub_path, "max_messages": 100},
+                    timeout=2,
+                )
+                if response.received_messages:
+                    ack_ids = [msg.ack_id for msg in response.received_messages]
+                    subscriber_client.acknowledge(
+                        request={"subscription": sub_path, "ack_ids": ack_ids}
+                    )
+            except Exception:
+                pass
 
-        subscriber_client.delete_subscription(request={"subscription": sub_path_1})
-        subscriber_client.delete_subscription(request={"subscription": sub_path_2})
+            try:
+                subscriber_client.delete_subscription(request={"subscription": sub_path})
+            except Exception:
+                pass

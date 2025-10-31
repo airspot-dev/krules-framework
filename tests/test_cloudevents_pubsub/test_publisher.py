@@ -39,15 +39,15 @@ def dispatcher(container, pubsub_project):
 class TestCloudEventsDispatcher:
     """Test suite for CloudEventsDispatcher (publisher)"""
 
-    def test_dispatcher_initialization(self, dispatcher):
+    def test_dispatcher_initialization(self, dispatcher, pubsub_project):
         """Dispatcher should initialize with correct configuration."""
-        assert dispatcher._project_id == "test-project"
+        assert dispatcher._project_id == pubsub_project
         assert dispatcher._source == "test-service"
         assert dispatcher._krules is not None
         assert dispatcher.default_dispatch_policy == "direct"
 
     def test_dispatch_publishes_to_topic(
-        self, dispatcher, container, pubsub_topic, subscriber_client
+        self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should publish CloudEvents to PubSub topic."""
         # Create subject
@@ -63,22 +63,11 @@ class TestCloudEventsDispatcher:
         )
 
         # Give PubSub time to propagate
-        time.sleep(1)
+        time.sleep(2)
 
-        # Pull message from subscription (create temp subscription)
-        subscription_path = subscriber_client.subscription_path(
-            "test-project", "test-sub-temp"
-        )
-        try:
-            subscriber_client.create_subscription(
-                request={"name": subscription_path, "topic": pubsub_topic}
-            )
-        except Exception:
-            pass
-
-        # Pull messages
+        # Pull message from persistent subscription
         response = subscriber_client.pull(
-            request={"subscription": subscription_path, "max_messages": 10},
+            request={"subscription": pubsub_subscription, "max_messages": 10},
             timeout=5,
         )
 
@@ -99,11 +88,14 @@ class TestCloudEventsDispatcher:
         assert payload["key"] == "value"
         assert payload["number"] == 42
 
-        # Cleanup
-        subscriber_client.delete_subscription(request={"subscription": subscription_path})
+        # Ack message (cleanup handled by fixture)
+        ack_ids = [msg.ack_id for msg in response.received_messages]
+        subscriber_client.acknowledge(
+            request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
+        )
 
     def test_dispatch_with_string_subject(
-        self, dispatcher, container, pubsub_topic, subscriber_client
+        self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should accept subject name as string."""
         # Dispatch with string subject
@@ -114,21 +106,11 @@ class TestCloudEventsDispatcher:
             topic=pubsub_topic,
         )
 
-        time.sleep(1)
+        time.sleep(2)
 
         # Verify message published
-        subscription_path = subscriber_client.subscription_path(
-            "test-project", "test-sub-string"
-        )
-        try:
-            subscriber_client.create_subscription(
-                request={"name": subscription_path, "topic": pubsub_topic}
-            )
-        except Exception:
-            pass
-
         response = subscriber_client.pull(
-            request={"subscription": subscription_path, "max_messages": 10},
+            request={"subscription": pubsub_subscription, "max_messages": 10},
             timeout=5,
         )
 
@@ -136,11 +118,14 @@ class TestCloudEventsDispatcher:
         message = response.received_messages[0].message
         assert message.attributes["subject"] == "string-subject"
 
-        # Cleanup
-        subscriber_client.delete_subscription(request={"subscription": subscription_path})
+        # Ack message (cleanup handled by fixture)
+        ack_ids = [msg.ack_id for msg in response.received_messages]
+        subscriber_client.acknowledge(
+            request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
+        )
 
     def test_dispatch_with_dataschema(
-        self, dispatcher, container, pubsub_topic, subscriber_client
+        self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should include dataschema in CloudEvent attributes."""
         subject = container.subject("test-subject")
@@ -153,20 +138,10 @@ class TestCloudEventsDispatcher:
             dataschema="https://example.com/schemas/order-v1",
         )
 
-        time.sleep(1)
-
-        subscription_path = subscriber_client.subscription_path(
-            "test-project", "test-sub-schema"
-        )
-        try:
-            subscriber_client.create_subscription(
-                request={"name": subscription_path, "topic": pubsub_topic}
-            )
-        except Exception:
-            pass
+        time.sleep(2)
 
         response = subscriber_client.pull(
-            request={"subscription": subscription_path, "max_messages": 10},
+            request={"subscription": pubsub_subscription, "max_messages": 10},
             timeout=5,
         )
 
@@ -174,8 +149,11 @@ class TestCloudEventsDispatcher:
         message = response.received_messages[0].message
         assert message.attributes["dataschema"] == "https://example.com/schemas/order-v1"
 
-        # Cleanup
-        subscriber_client.delete_subscription(request={"subscription": subscription_path})
+        # Ack message (cleanup handled by fixture)
+        ack_ids = [msg.ack_id for msg in response.received_messages]
+        subscriber_client.acknowledge(
+            request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
+        )
 
     def test_dispatch_without_topic_does_nothing(self, dispatcher, container):
         """Dispatcher should not publish if topic is None."""
@@ -190,7 +168,7 @@ class TestCloudEventsDispatcher:
         )
 
     def test_dispatch_includes_subject_ext_props(
-        self, dispatcher, container, pubsub_topic, subscriber_client
+        self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should include subject extended properties in message."""
         subject = container.subject("test-subject")
@@ -204,20 +182,10 @@ class TestCloudEventsDispatcher:
             topic=pubsub_topic,
         )
 
-        time.sleep(1)
-
-        subscription_path = subscriber_client.subscription_path(
-            "test-project", "test-sub-ext"
-        )
-        try:
-            subscriber_client.create_subscription(
-                request={"name": subscription_path, "topic": pubsub_topic}
-            )
-        except Exception:
-            pass
+        time.sleep(2)
 
         response = subscriber_client.pull(
-            request={"subscription": subscription_path, "max_messages": 10},
+            request={"subscription": pubsub_subscription, "max_messages": 10},
             timeout=5,
         )
 
@@ -228,5 +196,8 @@ class TestCloudEventsDispatcher:
         assert message.attributes["routing_key"] == "orders.new"
         assert message.attributes["priority"] == "high"
 
-        # Cleanup
-        subscriber_client.delete_subscription(request={"subscription": subscription_path})
+        # Ack message (cleanup handled by fixture)
+        ack_ids = [msg.ack_id for msg in response.received_messages]
+        subscriber_client.acknowledge(
+            request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
+        )

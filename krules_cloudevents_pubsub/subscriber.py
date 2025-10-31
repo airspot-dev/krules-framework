@@ -24,7 +24,6 @@ import os
 import json
 import logging
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -95,8 +94,7 @@ class PubSubSubscriber:
         self.logger = logger or logging.getLogger(__name__)
 
         self.message_queue = asyncio.Queue()
-        self.executor = ThreadPoolExecutor()
-        self.loop = asyncio.get_event_loop()
+        self.loop = None  # Will be set in start() when we have a running loop
         self.subscription_tasks = []
         self._running = False
 
@@ -204,7 +202,8 @@ class PubSubSubscriber:
         self.logger.info(f"Listening for messages on {subscription_path}")
 
         try:
-            await self.loop.run_in_executor(self.executor, future.result)
+            # Use asyncio.to_thread instead of loop.run_in_executor (Python 3.9+)
+            await asyncio.to_thread(future.result)
         except Exception as ex:
             self.logger.error(f"Error in subscription {subscription_path}: {ex}")
         finally:
@@ -241,6 +240,9 @@ class PubSubSubscriber:
         """
         self._running = True
 
+        # Capture the running event loop (safe to call in async context)
+        self.loop = asyncio.get_running_loop()
+
         for env_var, value in os.environ.items():
             if env_var.startswith("SUBSCRIPTION_"):
                 self.logger.info(f"Starting subscription: {value}")
@@ -259,7 +261,7 @@ class PubSubSubscriber:
         """
         Stop all subscriptions and clean up resources.
 
-        Cancels all running subscription tasks and shuts down the executor.
+        Cancels all running subscription tasks.
         """
         self.logger.info("Stopping PubSubSubscriber...")
         self._running = False
@@ -269,7 +271,6 @@ class PubSubSubscriber:
         self.queue_task.cancel()
 
         await asyncio.gather(*self.subscription_tasks, self.queue_task, return_exceptions=True)
-        self.executor.shutdown(wait=True)
 
         self.logger.info("PubSubSubscriber stopped")
 
