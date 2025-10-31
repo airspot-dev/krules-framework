@@ -1,29 +1,27 @@
-# KRules Framework 2.0
+# KRules Framework
 
-KRules Framework is a modern, async-first event-driven application framework for Python.
+**Modern async-first event-driven application framework for Python**
 
-## What's New in 2.0
+KRules is a Python framework for building reactive, event-driven applications with a focus on dynamic state management and declarative event handling.
 
-🎉 **Complete rewrite** with focus on simplicity and developer experience:
+## Features
 
-- ✨ **Decorator-based API** - Clean, intuitive syntax
-- ⚡ **Async/await native** - Built for modern Python
-- 🎯 **Type hints** - Full IDE autocomplete support
-- 🪶 **Lightweight** - Minimal dependencies (removed ReactiveX, Pydantic, CEL, JSONPath)
-- 🧪 **Easy testing** - Simple, fast unit tests
-- 📦 **Same subject system** - Dynamic properties, persistent state, storage backends
+- **Reactive Subjects** - Dynamic entities with schema-less properties that automatically emit events on changes
+- **Declarative Handlers** - Clean decorator-based API (`@on`, `@when`, `@middleware`)
+- **Async Native** - Built on asyncio for high-performance concurrent event processing
+- **Type Safe** - Full type hints for excellent IDE support and type checking
+- **Dependency Injection** - Container-based architecture for testability and flexibility
+- **Storage Agnostic** - Pluggable backends (Redis, SQLite, in-memory, custom)
+- **Production Ready** - Middleware support, error isolation, monitoring hooks
 
-> **Note**: 2.0 has breaking changes. See [MIGRATION.md](MIGRATION.md) for upgrade guide.
-
-## Quick Start
-
-### Installation
+## Installation
 
 ```bash
 pip install krules-framework
 ```
 
 With optional features:
+
 ```bash
 # Redis storage backend
 pip install "krules-framework[redis]"
@@ -35,31 +33,36 @@ pip install "krules-framework[pubsub]"
 pip install "krules-framework[fastapi]"
 ```
 
-### Basic Example
+## Quick Example
 
 ```python
-from krules_core import on, when, emit, subject_factory
+from krules_core.container import KRulesContainer
+from krules_core.event_types import SUBJECT_PROPERTY_CHANGED
 from datetime import datetime
 
-# Define event handlers with decorators
+# Initialize container
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Define event handlers
 @on("user.login")
 @when(lambda ctx: ctx.subject.get("status") == "active")
 async def handle_user_login(ctx):
-    """Handle active user login"""
+    """Process active user login"""
     user = ctx.subject
 
-    # Update subject properties
+    # Update properties (triggers property change events)
     user.set("last_login", datetime.now())
     user.set("login_count", lambda count: count + 1)
 
-    # Emit new events
+    # Emit new event
     await ctx.emit("user.logged-in", {
         "user_id": user.name,
         "count": user.get("login_count")
     })
 
 # React to property changes
-@on("subject-property-changed")
+@on(SUBJECT_PROPERTY_CHANGED)
 @when(lambda ctx: ctx.property_name == "temperature")
 @when(lambda ctx: ctx.new_value > 80)
 async def alert_on_overheat(ctx):
@@ -70,7 +73,7 @@ async def alert_on_overheat(ctx):
     })
 
 # Use subjects
-user = subject_factory("user-123")
+user = container.subject("user-123")
 user.set("status", "active")
 user.set("login_count", 0)
 
@@ -80,96 +83,86 @@ await emit("user.login", user, {"ip": "192.168.1.1"})
 
 ## Core Concepts
 
-### Subjects - Dynamic Entities with State
+### Subjects - Reactive State Entities
 
-Subjects are entities with persistent, reactive properties:
+Subjects are dynamic entities with persistent, reactive properties. Setting a property automatically emits a `subject-property-changed` event.
 
 ```python
-from krules_core import subject_factory
+from krules_core.container import KRulesContainer
 
-# Create or load subject
-device = subject_factory("device-456")
+container = KRulesContainer()
 
-# Set properties (fully dynamic - no schema required!)
+# Create subject
+device = container.subject("device-456")
+
+# Set properties (schema-less, fully dynamic)
 device.set("temperature", 75.5)
 device.set("status", "online")
 device.set("metadata", {"location": "room-1", "floor": 2})
 
-# Get properties
-temp = device.get("temperature")
-status = device.get("status", default="offline")  # With default
-
-# Lambda values (computed from previous value)
+# Lambda values for atomic operations
 device.set("count", 0)
-device.set("count", lambda c: c + 1)  # Increment
+device.set("count", lambda c: c + 1)  # Atomic increment
 
-# Extended properties (metadata, not part of main state)
+# Get with defaults
+temp = device.get("temperature")
+status = device.get("status", default="offline")
+
+# Extended properties (metadata, no events)
 device.set_ext("tags", ["production", "critical"])
-
-# Iteration
-for prop_name in device:
-    print(f"{prop_name}: {device.get(prop_name)}")
-
-# Check existence
-if "temperature" in device:
-    print(device.get("temperature"))
 
 # Persist to storage
 device.store()
-
-# Export to dict
-data = device.dict()  # {"name": "device-456", "temperature": 75.5, ...}
 ```
 
-### Event Handlers - Decorators
+### Event Handlers - Declarative Processing
 
-Define handlers using clean decorator syntax:
+Define handlers using decorators. Supports glob patterns and conditional filters.
 
 ```python
-from krules_core import on, when, EventContext
+from krules_core.container import KRulesContainer
+from krules_core.event_types import SUBJECT_PROPERTY_CHANGED
 
-# Simple handler
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Single event
 @on("order.created")
-async def process_order(ctx: EventContext):
-    order = ctx.subject
-    order.set("status", "processing")
+async def process_order(ctx):
+    ctx.subject.set("status", "processing")
     await ctx.emit("order.processing")
 
 # Multiple events
 @on("user.created", "user.updated", "user.deleted")
-async def log_user_change(ctx: EventContext):
-    logger.info(f"User event: {ctx.event_type}")
+async def log_user_change(ctx):
+    print(f"User event: {ctx.event_type}")
 
 # Glob patterns
-@on("device.*")  # Matches device.created, device.updated, etc.
-async def handle_device(ctx: EventContext):
-    process_device_event(ctx)
+@on("device.*")
+async def handle_device(ctx):
+    print(f"Device event: {ctx.event_type}")
 
-# Wildcard
-@on("*")
-async def log_all(ctx: EventContext):
-    logger.debug(f"Event: {ctx.event_type} on {ctx.subject.name}")
+# Property change with filters
+@on(SUBJECT_PROPERTY_CHANGED)
+@when(lambda ctx: ctx.property_name == "status")
+@when(lambda ctx: ctx.new_value == "error")
+async def on_error_status(ctx):
+    await ctx.emit("alert.device_error", {
+        "device_id": ctx.subject.name
+    })
 ```
 
 ### Filters - Conditional Execution
 
-Use `@when` to add conditions:
+Stack multiple `@when` decorators for conditional execution (all must pass).
 
 ```python
-# Single filter
+# Multiple filters (AND logic)
 @on("payment.process")
 @when(lambda ctx: ctx.payload.get("amount") > 0)
-async def process_payment(ctx):
-    # Only processes payments with amount > 0
-    pass
-
-# Multiple filters (ALL must pass)
-@on("admin.action")
-@when(lambda ctx: ctx.payload.get("role") == "admin")
 @when(lambda ctx: ctx.subject.get("verified") == True)
-@when(lambda ctx: not ctx.subject.get("suspended", False))
-async def admin_action(ctx):
-    # Only for verified, non-suspended admins
+async def process_payment(ctx):
+    # Only for verified users with amount > 0
     pass
 
 # Reusable filters
@@ -184,39 +177,18 @@ def has_credits(ctx):
 @when(has_credits)
 async def use_premium_feature(ctx):
     ctx.subject.set("credits", lambda c: c - 1)
-    # Use feature...
 ```
 
-### Property Change Events
+### Middleware - Cross-Cutting Concerns
 
-Subject properties emit change events automatically:
-
-```python
-@on("subject-property-changed")
-@when(lambda ctx: ctx.property_name == "status")
-async def on_status_change(ctx):
-    device = ctx.subject
-    print(f"Status changed: {ctx.old_value} → {ctx.new_value}")
-
-    if ctx.new_value == "error":
-        await ctx.emit("alert.device_error", {
-            "device_id": device.name
-        })
-
-# Use it
-device = subject_factory("device-123")
-device.set("status", "ok")      # Emits subject-property-changed
-device.set("status", "warning") # Emits subject-property-changed
-device.set("status", "error")   # Emits subject-property-changed → triggers alert
-```
-
-### Middleware
-
-Run logic for all events:
+Middleware runs for all events, enabling logging, timing, error handling, etc.
 
 ```python
-from krules_core import middleware
+from krules_core.container import KRulesContainer
 import time
+
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
 
 @middleware
 async def timing_middleware(ctx, next):
@@ -232,62 +204,93 @@ async def error_handling(ctx, next):
     try:
         await next()
     except Exception as e:
-        logger.error(f"Handler error: {e}")
+        print(f"Handler error: {e}")
         await ctx.emit("error.handler_failed", {"error": str(e)})
 ```
 
-## Advanced Features
+## Storage Backends
 
-### Storage Backends
+KRules supports pluggable storage backends for subject persistence.
+
+### Redis Storage
 
 ```python
 from dependency_injector import providers
-from krules_core.providers import subject_storage_factory
+from krules_core.container import KRulesContainer
+from redis_subjects_storage.storage_impl import create_redis_storage
 
-# Redis storage
-from redis_subjects_storage import RedisSubjectStorage
-import redis
+# Create container
+container = KRulesContainer()
 
-redis_client = redis.Redis(host='localhost', port=6379)
-subject_storage_factory.override(
-    providers.Factory(
-        lambda name, **kwargs: RedisSubjectStorage(name, redis_client)
-    )
+# Override storage with Redis
+redis_factory = create_redis_storage(
+    url="redis://localhost:6379",
+    key_prefix="myapp:"
 )
+container.subject_storage.override(providers.Object(redis_factory))
 
 # Now all subjects use Redis
-user = subject_factory("user-123")
-user.set("name", "John")  # Stored in Redis
+user = container.subject("user-123")
+user.set("name", "John")  # Persisted in Redis
+user.store()
 ```
 
-### Async Context
+### Custom Storage
+
+Implement the storage interface to create custom backends:
 
 ```python
-# In async context (FastAPI, async main, etc.)
-@on("data.fetch")
-async def fetch_data(ctx):
-    async with httpx.AsyncClient() as client:
-        response = await client.get("https://api.example.com/data")
-        ctx.subject.set("external_data", response.json())
+class CustomStorage:
+    def __init__(self, subject_name, event_info=None, event_data=None):
+        self._subject = subject_name
 
-# Events emit asynchronously
-await emit("data.fetch", subject)
+    def load(self):
+        """Return (properties_dict, ext_properties_dict)"""
+        return {}, {}
+
+    def store(self, inserts=[], updates=[], deletes=[]):
+        """Persist property changes"""
+        pass
+
+    def set(self, prop):
+        """Set single property, return (new_value, old_value)"""
+        pass
+
+    def get(self, prop):
+        """Get property value"""
+        pass
+
+    def delete(self, prop):
+        """Delete property"""
+        pass
+
+    def flush(self):
+        """Delete entire subject"""
+        pass
+
+    def get_ext_props(self):
+        """Return extended properties dict"""
+        return {}
 ```
 
-### Testing
+## Testing
+
+KRules provides utilities for easy testing:
 
 ```python
 import pytest
-from krules_core import on, when, emit, subject_factory, reset_event_bus
+from krules_core.container import KRulesContainer
+from krules_core.event_types import SUBJECT_PROPERTY_CHANGED
 
-@pytest.fixture(autouse=True)
-def reset():
-    """Reset event bus before each test"""
-    reset_event_bus()
+@pytest.fixture
+def container():
+    """Create fresh container for each test"""
+    return KRulesContainer()
 
 @pytest.mark.asyncio
-async def test_user_login():
+async def test_user_login(container):
     """Test user login handler"""
+    on, when, middleware, emit = container.handlers()
     results = []
 
     @on("user.login")
@@ -295,27 +298,66 @@ async def test_user_login():
         results.append(ctx.event_type)
         ctx.subject.set("logged_in", True)
 
-    user = subject_factory("test-user")
+    user = container.subject("test-user")
     await emit("user.login", user)
 
     assert len(results) == 1
     assert user.get("logged_in") == True
 ```
 
+## Documentation
+
+- [Quick Start Guide](QUICKSTART.md) - 5-minute tutorial
+- [Core Concepts](CORE_CONCEPTS.md) - Framework fundamentals
+- [Subjects](SUBJECTS.md) - Reactive property store deep dive
+- [Event Handlers](EVENT_HANDLERS.md) - Handlers, filters, patterns
+- [Middleware](MIDDLEWARE.md) - Cross-cutting concerns
+- [Container & DI](CONTAINER_DI.md) - Dependency injection
+- [Storage Backends](STORAGE_BACKENDS.md) - Persistence layer
+- [Integrations](INTEGRATIONS.md) - FastAPI, Pub/Sub, CloudEvents
+- [Testing](TESTING.md) - Testing strategies
+- [Advanced Patterns](ADVANCED_PATTERNS.md) - Production best practices
+- [Shell Mode](SHELL_MODE.md) - Interactive REPL usage
+- [API Reference](API_REFERENCE.md) - Complete API documentation
+
+## Integrations
+
+### FastAPI
+
+```python
+from fastapi import FastAPI
+from krules_fastapi_env import KRulesApp
+
+app = FastAPI()
+krules = KRulesApp(app)
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str):
+    user = krules.container.subject(f"user-{user_id}")
+    return user.dict()
+```
+
+### Google Cloud Pub/Sub
+
+```python
+from krules_cloudevents_pubsub import CloudEventsPubSubPublisher
+from krules_core.container import KRulesContainer
+
+container = KRulesContainer()
+publisher = CloudEventsPubSubPublisher(
+    project_id="my-project",
+    topic_name="my-topic"
+)
+
+# Emit events to Pub/Sub
+user = container.subject("user-123")
+await publisher.publish("user.created", user, {"timestamp": "..."})
+```
+
 ## Requirements
 
 - Python >=3.11
-- For async support: Python 3.11+ with asyncio
-
-## Upgrading from 1.x
-
-See [MIGRATION.md](MIGRATION.md) for detailed migration guide.
-
-**TL;DR:**
-1. Rules (`RuleFactory.create(...)`) → Handlers (`@on`, `@when`)
-2. `event_router_factory().route()` → `await emit()`
-3. `Filter`, `Process` classes → Python functions
-4. Subject API unchanged ✅
+- asyncio support
 
 ## License
 
@@ -323,8 +365,12 @@ Apache License 2.0
 
 ## Contributing
 
-This package is maintained by Airspot for internal use, but contributions are welcome.
+This framework is maintained by [Airspot](mailto:info@airspot.tech) for internal use, but contributions are welcome.
+
+## Support
+
+For issues and questions, please open a GitHub issue.
 
 ---
 
-Developed and maintained by [Airspot](mailto:info@airspot.tech)
+**Built with ❤️ by Airspot**
