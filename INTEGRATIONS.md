@@ -1,186 +1,307 @@
 # Integrations
 
-KRules integrates with popular frameworks and services. This guide covers FastAPI, Google Cloud Pub/Sub, and CloudEvents.
+KRules integrates with external systems through two complementary mechanisms:
 
-## FastAPI Integration
+- **Event Receivers (Inbound)** - Bring external events INTO KRules for local processing
+- **Event Emitters (Outbound)** - Send KRules events OUT to external systems
 
-The `krules_fastapi_env` module provides FastAPI integration with request-scoped containers.
+Both patterns enable KRules to participate in distributed event-driven architectures.
 
-### Installation
+## Event Receivers (Inbound)
+
+Event receivers expose KRules to external systems, allowing them to trigger local event handlers.
+
+### FastAPI - HTTP CloudEvents Receiver
+
+The `krules_fastapi_env` module creates an HTTP endpoint that receives CloudEvents and routes them to your local KRules handlers.
+
+**What It Does:**
+- Exposes HTTP endpoint that receives CloudEvents (POST `/krules`)
+- Parses CloudEvents and extracts subject, event type, and payload
+- Routes to local event bus, triggering matching handlers
+
+**Installation:**
 
 ```bash
 pip install "krules-framework[fastapi]"
 ```
 
-### Basic Setup
-
-```python
-from fastapi import FastAPI
-from krules_fastapi_env import KRulesApp
-
-app = FastAPI()
-krules = KRulesApp(app)
-
-# Access container in routes
-@app.get("/users/{user_id}")
-async def get_user(user_id: str):
-    user = krules.container.subject(f"user-{user_id}")
-    return user.dict()
-```
-
-### With Handlers
-
-```python
-from fastapi import FastAPI
-from krules_fastapi_env import KRulesApp
-
-app = FastAPI()
-krules = KRulesApp(app)
-
-# Define handlers
-on, when, middleware, emit = krules.container.handlers()
-
-@on("user.created")
-async def handle_user_created(ctx):
-    ctx.subject.set("created_at", datetime.now().isoformat())
-
-# API endpoint
-@app.post("/users")
-async def create_user(email: str, name: str):
-    user = krules.container.subject(f"user-{uuid.uuid4()}")
-    user.set("email", email)
-    user.set("name", name)
-    user.store()
-
-    # Emit event
-    on, when, middleware, emit = krules.container.handlers()
-    await emit("user.created", user)
-
-    return user.dict()
-```
-
-### Configuration
+**Example:**
 
 ```python
 from krules_fastapi_env import KRulesApp
-from dependency_injector import providers
-from redis_subjects_storage.storage_impl import create_redis_storage
+from krules_core.container import KRulesContainer
 
-app = FastAPI()
-krules = KRulesApp(app)
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
 
-# Configure Redis storage
-redis_factory = create_redis_storage(
-    url="redis://localhost:6379",
-    key_prefix="api:"
-)
-krules.container.subject_storage.override(providers.Object(redis_factory))
+# Define local handlers (same as always)
+@on("order.created")
+async def handle_order(ctx):
+    print(f"Received order: {ctx.subject.name}")
+    ctx.subject.set("status", "processing")
+
+# Create FastAPI app that receives CloudEvents
+app = KRulesApp(krules_container=container)
+
+# Now external systems can POST CloudEvents to /krules endpoint:
+# POST /krules
+# Content-Type: application/cloudevents+json
+# {
+#   "specversion": "1.0",
+#   "type": "order.created",
+#   "source": "/external-system",
+#   "subject": "order-123",
+#   "data": {"amount": 100}
+# }
 ```
+
+**Use Case:** Microservice that receives HTTP CloudEvents from other services and processes them locally.
 
 For more details, see [krules_fastapi_env/README.md](krules_fastapi_env/README.md).
 
-## Google Cloud Pub/Sub
+### Pub/Sub Subscriber - Pub/Sub Receiver
 
-The `krules_pubsub` and `krules_cloudevents_pubsub` modules provide Pub/Sub integration.
+The `krules_cloudevents_pubsub` subscriber receives CloudEvents from Google Pub/Sub topics and routes them to local handlers.
 
-### Installation
+**What It Does:**
+- Subscribes to Google Pub/Sub subscription
+- Receives CloudEvents from Pub/Sub topic
+- Routes to local event bus, triggering matching handlers
+
+**Installation:**
 
 ```bash
 pip install "krules-framework[pubsub]"
 ```
 
-### Publishing Events
+**Example:**
 
 ```python
-from krules_cloudevents_pubsub import CloudEventsPubSubPublisher
+from krules_cloudevents_pubsub import PubSubSubscriber
+from krules_core.container import KRulesContainer
 
-# Create publisher
-publisher = CloudEventsPubSubPublisher(
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Define local handlers
+@on("device.temperature-alert")
+async def handle_alert(ctx):
+    print(f"Alert from {ctx.subject.name}: {ctx.payload}")
+
+# Subscribe to Pub/Sub topic
+subscriber = PubSubSubscriber(
     project_id="my-project",
-    topic_name="krules-events"
-)
-
-# Publish event as CloudEvent
-user = container.subject("user-123")
-await publisher.publish(
-    event_type="user.created",
-    subject=user,
-    data={"timestamp": datetime.now().isoformat()}
-)
-```
-
-### Subscribing to Events
-
-```python
-from krules_cloudevents_pubsub import CloudEventsPubSubSubscriber
-
-# Create subscriber
-subscriber = CloudEventsPubSubSubscriber(
-    project_id="my-project",
-    subscription_name="krules-subscription",
+    subscription_name="krules-alerts",
     container=container
 )
 
-# Define handlers (same as regular KRules handlers)
-on, when, middleware, emit = container.handlers()
-
-@on("user.created")
-async def handle_user_created(ctx):
-    print(f"Received user created: {ctx.subject.name}")
-
-# Start subscriber
+# Start receiving events from Pub/Sub
 await subscriber.run()
 ```
 
-For more details, see:
-- [krules_pubsub/README.md](krules_pubsub/README.md)
-- [krules_cloudevents_pubsub/README.md](krules_cloudevents_pubsub/README.md)
+**Use Case:** Service that listens to Pub/Sub topic and processes events published by other services.
 
-## CloudEvents
+For more details, see [krules_cloudevents_pubsub/README.md](krules_cloudevents_pubsub/README.md).
 
-The `krules_cloudevents` module provides CloudEvents specification support.
+## Event Emitters (Outbound)
 
-### Installation
+Event emitters send KRules events to external systems. Both can be configured as **middleware** to transparently route all events, or used explicitly per event.
+
+### HTTP CloudEvents - HTTP Emitter
+
+The `krules_cloudevents` module sends CloudEvents to external HTTP endpoints.
+
+**What It Does:**
+- Converts KRules events to CloudEvents format
+- Sends HTTP POST requests to external URLs
+- Can be middleware (routes all events) or explicit (routes specific events)
+
+**Installation:**
 
 ```bash
 pip install "krules-framework[pubsub]"
 ```
 
-### Creating CloudEvents
+**As Middleware (Transparent Routing):**
 
 ```python
-from krules_cloudevents import CloudEvent
+from krules_cloudevents import CloudEventsDispatcher, create_dispatcher_middleware
+from krules_core.container import KRulesContainer
 
-# Create CloudEvent
-event = CloudEvent.create(
-    type="com.example.user.created",
-    source="/users/service",
-    subject="user-123",
-    data={"email": "john@example.com"}
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Create dispatcher
+dispatcher = CloudEventsDispatcher(
+    dispatch_url="https://api.example.com/events",
+    source="my-service",
+    krules_container=container
 )
 
-# Access attributes
-print(event.type)      # "com.example.user.created"
-print(event.source)    # "/users/service"
-print(event.subject)   # "user-123"
-print(event.data)      # {"email": "john@example.com"}
+# Register as middleware - ALL events are sent to external URL
+dispatcher_mw = create_dispatcher_middleware(dispatcher)
+container.event_bus().add_middleware(dispatcher_mw)
+
+# Now all ctx.emit() calls also send to external URL
+@on("order.created")
+async def handle_order(ctx):
+    # This emit triggers local handlers AND sends to external URL
+    await ctx.emit("order.processing", ctx.subject, {"status": "processing"})
 ```
 
-### Parsing CloudEvents
+**Explicit Per-Event:**
 
 ```python
-# Parse from JSON
-json_data = '{"specversion": "1.0", "type": "user.created", ...}'
-event = CloudEvent.from_json(json_data)
+# Send specific event to external URL
+await emit("user.created", user, dispatch_url="https://api.example.com/events")
 ```
 
+**Use Case:** Notify external services about events happening in your KRules application.
+
 For more details, see [krules_cloudevents/README.md](krules_cloudevents/README.md).
+
+### Pub/Sub Publisher - Pub/Sub Emitter
+
+The `krules_cloudevents_pubsub` publisher sends CloudEvents to Google Pub/Sub topics.
+
+**What It Does:**
+- Converts KRules events to CloudEvents format
+- Publishes to Google Pub/Sub topics
+- Can be middleware (routes all events) or explicit (routes specific events)
+
+**Installation:**
+
+```bash
+pip install "krules-framework[pubsub]"
+```
+
+**As Middleware (Transparent Routing):**
+
+```python
+from krules_cloudevents_pubsub import CloudEventsDispatcher, create_dispatcher_middleware
+from krules_core.container import KRulesContainer
+
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Create dispatcher
+dispatcher = CloudEventsDispatcher(
+    project_id="my-project",
+    default_topic="krules-events",
+    source="my-service",
+    krules_container=container
+)
+
+# Register as middleware - ALL events are published to Pub/Sub
+dispatcher_mw = create_dispatcher_middleware(dispatcher)
+container.event_bus().add_middleware(dispatcher_mw)
+
+# Now all ctx.emit() calls also publish to Pub/Sub
+@on("sensor.reading")
+async def process_reading(ctx):
+    # This emit triggers local handlers AND publishes to Pub/Sub
+    await ctx.emit("sensor.processed", ctx.subject, {"value": ctx.payload["value"]})
+```
+
+**Explicit Per-Event:**
+
+```python
+# Publish specific event to Pub/Sub topic
+await emit("alert.critical", device, topic="critical-alerts")
+```
+
+**Use Case:** Publish events to Pub/Sub for consumption by other microservices.
+
+For more details, see [krules_cloudevents_pubsub/README.md](krules_cloudevents_pubsub/README.md).
+
+## Complete Multi-Service Example
+
+Here's how receivers and emitters work together in a distributed system:
+
+```python
+# SERVICE A: Receives HTTP CloudEvents, processes, publishes to Pub/Sub
+from krules_fastapi_env import KRulesApp
+from krules_cloudevents_pubsub import CloudEventsDispatcher, create_dispatcher_middleware
+from krules_core.container import KRulesContainer
+
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Setup Pub/Sub emitter middleware
+pubsub_dispatcher = CloudEventsDispatcher(
+    project_id="my-project",
+    default_topic="processed-events",
+    source="service-a",
+    krules_container=container
+)
+container.event_bus().add_middleware(create_dispatcher_middleware(pubsub_dispatcher))
+
+# Define handler
+@on("order.created")
+async def process_order(ctx):
+    ctx.subject.set("status", "processing")
+    # Emits locally AND publishes to Pub/Sub (via middleware)
+    await ctx.emit("order.processed", ctx.subject)
+
+# Expose HTTP receiver
+app = KRulesApp(krules_container=container)
+# External systems POST to /krules
+```
+
+```python
+# SERVICE B: Subscribes to Pub/Sub, processes, sends HTTP CloudEvents
+from krules_cloudevents_pubsub import PubSubSubscriber
+from krules_cloudevents import CloudEventsDispatcher, create_dispatcher_middleware
+from krules_core.container import KRulesContainer
+
+container = KRulesContainer()
+on, when, middleware, emit = container.handlers()
+
+# Setup HTTP emitter middleware
+http_dispatcher = CloudEventsDispatcher(
+    dispatch_url="https://external-api.com/events",
+    source="service-b",
+    krules_container=container
+)
+container.event_bus().add_middleware(create_dispatcher_middleware(http_dispatcher))
+
+# Define handler
+@on("order.processed")
+async def notify_fulfillment(ctx):
+    ctx.subject.set("notified", True)
+    # Emits locally AND sends HTTP CloudEvent (via middleware)
+    await ctx.emit("fulfillment.requested", ctx.subject)
+
+# Subscribe to Pub/Sub
+subscriber = PubSubSubscriber(
+    project_id="my-project",
+    subscription_name="service-b-sub",
+    container=container
+)
+await subscriber.run()
+```
+
+**Flow:**
+1. External system sends HTTP CloudEvent to Service A (`POST /krules`)
+2. Service A receives, processes locally, and publishes to Pub/Sub
+3. Service B subscribes to Pub/Sub, receives event, processes locally
+4. Service B sends HTTP CloudEvent to external API
+
+## Integration Summary
+
+| Component | Direction | Middleware | Purpose |
+|-----------|-----------|------------|---------|
+| FastAPI | Inbound (Receiver) | N/A | Receive HTTP CloudEvents from external systems |
+| Pub/Sub Subscriber | Inbound (Receiver) | N/A | Receive events from Pub/Sub topics |
+| HTTP CloudEvents | Outbound (Emitter) | ✅ Yes | Send HTTP CloudEvents to external URLs |
+| Pub/Sub Publisher | Outbound (Emitter) | ✅ Yes | Publish events to Pub/Sub topics |
 
 ## Custom Integrations
 
 ### Event Source Integration
 
-Integrate custom event sources:
+Integrate custom event sources by routing them to the KRules event bus:
 
 ```python
 class KafkaEventSource:
@@ -202,7 +323,7 @@ class KafkaEventSource:
             # Get or create subject
             subject = self.container.subject(subject_name)
 
-            # Emit as KRules event
+            # Emit as KRules event (triggers local handlers)
             await self.emit(event_type, subject, json.loads(message.value))
 
 # Use
@@ -212,7 +333,7 @@ await kafka_source.run()
 
 ### Event Sink Integration
 
-Send events to external systems:
+Send events to external systems using middleware:
 
 ```python
 @middleware

@@ -322,37 +322,89 @@ async def test_user_login(container):
 
 ## Integrations
 
-### FastAPI
+KRules supports event-driven communication with external systems through **event receivers** (inbound) and **event emitters** (outbound).
+
+### Event Receivers (Inbound)
+
+**FastAPI Integration** - Receive HTTP CloudEvents
 
 ```python
-from fastapi import FastAPI
 from krules_fastapi_env import KRulesApp
-
-app = FastAPI()
-krules = KRulesApp(app)
-
-@app.get("/users/{user_id}")
-async def get_user(user_id: str):
-    user = krules.container.subject(f"user-{user_id}")
-    return user.dict()
-```
-
-### Google Cloud Pub/Sub
-
-```python
-from krules_cloudevents_pubsub import CloudEventsPubSubPublisher
 from krules_core.container import KRulesContainer
 
 container = KRulesContainer()
-publisher = CloudEventsPubSubPublisher(
+on, when, middleware, emit = container.handlers()
+
+# Define handlers (same as local events)
+@on("order.created")
+async def handle_order(ctx):
+    print(f"Received order: {ctx.subject.name}")
+
+# Create FastAPI app that receives CloudEvents
+app = KRulesApp(krules_container=container)
+# POST /krules endpoint now receives CloudEvents and triggers handlers
+```
+
+**Pub/Sub Subscriber** - Receive events from Google Pub/Sub
+
+```python
+from krules_cloudevents_pubsub import PubSubSubscriber
+
+# Subscribe to Pub/Sub topic
+subscriber = PubSubSubscriber(
     project_id="my-project",
-    topic_name="my-topic"
+    subscription_name="my-subscription",
+    container=container
 )
 
-# Emit events to Pub/Sub
-user = container.subject("user-123")
-await publisher.publish("user.created", user, {"timestamp": "..."})
+# Same handlers work for Pub/Sub events
+await subscriber.run()
 ```
+
+### Event Emitters (Outbound)
+
+**HTTP CloudEvents** - Send events to external HTTP endpoints
+
+```python
+from krules_cloudevents import CloudEventsDispatcher, create_dispatcher_middleware
+
+# Create dispatcher
+dispatcher = CloudEventsDispatcher(
+    dispatch_url="https://api.example.com/events",
+    source="my-service",
+    krules_container=container
+)
+
+# Register as middleware
+dispatcher_mw = create_dispatcher_middleware(dispatcher)
+container.event_bus().add_middleware(dispatcher_mw)
+
+# Now emit events to external URL
+await emit("user.created", user, dispatch_url="https://api.example.com/events")
+```
+
+**Pub/Sub Publisher** - Send events to Google Pub/Sub
+
+```python
+from krules_cloudevents_pubsub import CloudEventsDispatcher, create_dispatcher_middleware
+
+# Create dispatcher
+dispatcher = CloudEventsDispatcher(
+    project_id="my-project",
+    default_topic="krules-events",
+    source="my-service",
+    krules_container=container
+)
+
+# Register as middleware
+dispatcher_mw = create_dispatcher_middleware(dispatcher)
+container.event_bus().add_middleware(dispatcher_mw)
+
+# Emit to Pub/Sub topic
+await emit("user.created", user, topic="user-events")
+```
+
+See [Integrations](INTEGRATIONS.md) for detailed guides.
 
 ## Requirements
 
