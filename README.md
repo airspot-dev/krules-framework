@@ -35,51 +35,70 @@ pip install "krules-framework[fastapi]"
 
 ## Quick Example
 
+This example demonstrates **reactive state composition** - building complex states from simple properties, where each layer reacts to changes in lower layers.
+
 ```python
 from krules_core.container import KRulesContainer
 from krules_core.event_types import SUBJECT_PROPERTY_CHANGED
-from datetime import datetime
 
-# Initialize container
 container = KRulesContainer()
 on, when, middleware, emit = container.handlers()
 
-# Define event handlers
-@on("user.login")
-@when(lambda ctx: ctx.subject.get("status") == "active")
-async def handle_user_login(ctx):
-    """Process active user login"""
-    user = ctx.subject
-
-    # Update properties (triggers property change events)
-    user.set("last_login", datetime.now())
-    user.set("login_count", lambda count: count + 1)
-
-    # Emit new event
-    await ctx.emit("user.logged-in", {
-        "user_id": user.name,
-        "count": user.get("login_count")
-    })
-
-# React to property changes
+# Layer 1: Derive health status from metrics (ONLY for device: subjects)
 @on(SUBJECT_PROPERTY_CHANGED)
-@when(lambda ctx: ctx.property_name == "temperature")
-@when(lambda ctx: ctx.new_value > 80)
-async def alert_on_overheat(ctx):
-    """Alert when temperature exceeds threshold"""
-    await ctx.emit("alert.overheat", {
-        "device": ctx.subject.name,
-        "temperature": ctx.new_value
-    })
+@when(lambda ctx: ctx.subject.name.startswith("device:"))
+@when(lambda ctx: ctx.property_name in ["cpu_usage", "memory_usage", "error_rate"])
+async def compute_device_health(ctx):
+    """Aggregate device metrics into health status"""
+    device = ctx.subject
+    # Read from subject's internal cache (even if not yet persisted)
+    cpu = device.get("cpu_usage", 0)
+    memory = device.get("memory_usage", 0)
+    errors = device.get("error_rate", 0)
 
-# Use subjects
-user = container.subject("user-123")
-user.set("status", "active")
-user.set("login_count", 0)
+    if cpu > 90 or memory > 90 or errors > 10:
+        device.set("health", "critical")
+    elif cpu > 70 or memory > 70 or errors > 5:
+        device.set("health", "warning")
+    else:
+        device.set("health", "healthy")
 
-# Emit events
-await emit("user.login", user, {"ip": "192.168.1.1"})
+# Layer 2: React to health transitions (ONLY for device: subjects)
+@on(SUBJECT_PROPERTY_CHANGED)
+@when(lambda ctx: ctx.subject.name.startswith("device:"))
+@when(lambda ctx: ctx.property_name == "health")
+async def handle_device_health_change(ctx):
+    """Take action based on health state transition"""
+    print(f"{ctx.subject.name}: {ctx.old_value} → {ctx.new_value}")
+
+    if ctx.new_value == "critical":
+        await ctx.emit("device.alert.critical", ctx.subject)
+    elif ctx.new_value == "healthy" and ctx.old_value == "critical":
+        await ctx.emit("device.alert.recovered", ctx.subject)
+
+# Usage
+device = container.subject("device:prod-01")
+
+# Batch mode: multiple sets + single store
+device.set("cpu_usage", 75)      # → triggers handler, health="warning"
+device.set("memory_usage", 60)
+device.set("error_rate", 2)
+device.store()  # Single persistence, flushes cache to Redis
+
+# Single update mode: bypass cache, write directly
+await device.set("cpu_usage", 95, use_cache=False)  # → health="critical" → alert!
+await device.set("cpu_usage", 50, use_cache=False)  # → health="healthy" → recovered!
+await device.set("cpu_usage", 45, use_cache=False)  # → NO EVENT (health unchanged)
 ```
+
+**Key Concepts:**
+
+1. **Reactive Composition** - `health` state is automatically derived from metrics
+2. **Subject Type Filtering** - Handlers target `device:*` subjects using naming conventions
+3. **Events on Change Only** - Property change events fire only when values actually change
+4. **State Transitions** - Access `old_value` and `new_value` to handle transitions
+5. **Efficient Persistence** - Batch updates with single `store()`, or `use_cache=False` for single updates
+6. **Bounded Entities** - Devices are predictable, limited entities (not infinite like orders)
 
 ## Core Concepts
 
