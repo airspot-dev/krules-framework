@@ -58,7 +58,7 @@ app = KRulesApp(krules_container=container)
 
 **Use Case:** Microservice that receives HTTP CloudEvents from other services and processes them locally.
 
-For more details, see [krules_fastapi_env/README.md](krules_fastapi_env/README.md).
+For more details, see [krules_fastapi_env/README.md](../krules_fastapi_env/README.md).
 
 ### Pub/Sub Subscriber - Pub/Sub Receiver
 
@@ -102,7 +102,7 @@ await subscriber.run()
 
 **Use Case:** Service that listens to Pub/Sub topic and processes events published by other services.
 
-For more details, see [krules_cloudevents_pubsub/README.md](krules_cloudevents_pubsub/README.md).
+For more details, see [krules_cloudevents_pubsub/README.md](../krules_cloudevents_pubsub/README.md).
 
 ## Event Emitters (Outbound)
 
@@ -159,7 +159,7 @@ await emit("user.created", user, dispatch_url="https://api.example.com/events")
 
 **Use Case:** Notify external services about events happening in your KRules application.
 
-For more details, see [krules_cloudevents/README.md](krules_cloudevents/README.md).
+For more details, see [krules_cloudevents/README.md](../krules_cloudevents/README.md).
 
 ### Pub/Sub Publisher - Pub/Sub Emitter
 
@@ -213,7 +213,7 @@ await emit("alert.critical", device, topic="critical-alerts")
 
 **Use Case:** Publish events to Pub/Sub for consumption by other microservices.
 
-For more details, see [krules_cloudevents_pubsub/README.md](krules_cloudevents_pubsub/README.md).
+For more details, see [krules_cloudevents_pubsub/README.md](../krules_cloudevents_pubsub/README.md).
 
 ## Complete Multi-Service Example
 

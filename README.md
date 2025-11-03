@@ -326,18 +326,18 @@ async def test_user_login(container):
 
 ## Documentation
 
-- [Quick Start Guide](QUICKSTART.md) - 5-minute tutorial
-- [Core Concepts](CORE_CONCEPTS.md) - Framework fundamentals
-- [Subjects](SUBJECTS.md) - Reactive property store deep dive
-- [Event Handlers](EVENT_HANDLERS.md) - Handlers, filters, patterns
-- [Middleware](MIDDLEWARE.md) - Cross-cutting concerns
-- [Container & DI](CONTAINER_DI.md) - Dependency injection
-- [Storage Backends](STORAGE_BACKENDS.md) - Persistence layer
-- [Integrations](INTEGRATIONS.md) - FastAPI, Pub/Sub, CloudEvents
-- [Testing](TESTING.md) - Testing strategies
-- [Advanced Patterns](ADVANCED_PATTERNS.md) - Production best practices
-- [Shell Mode](SHELL_MODE.md) - Interactive REPL usage
-- [API Reference](API_REFERENCE.md) - Complete API documentation
+- [Quick Start Guide](docs/QUICKSTART.md) - 5-minute tutorial
+- [Core Concepts](docs/CORE_CONCEPTS.md) - Framework fundamentals
+- [Subjects](docs/SUBJECTS.md) - Reactive property store deep dive
+- [Event Handlers](docs/EVENT_HANDLERS.md) - Handlers, filters, patterns
+- [Middleware](docs/MIDDLEWARE.md) - Cross-cutting concerns
+- [Container & DI](docs/CONTAINER_DI.md) - Dependency injection
+- [Storage Backends](docs/STORAGE_BACKENDS.md) - Persistence layer
+- [Integrations](docs/INTEGRATIONS.md) - FastAPI, Pub/Sub, CloudEvents
+- [Testing](docs/TESTING.md) - Testing strategies
+- [Advanced Patterns](docs/ADVANCED_PATTERNS.md) - Production best practices
+- [Shell Mode](docs/SHELL_MODE.md) - Interactive REPL usage
+- [API Reference](docs/API_REFERENCE.md) - Complete API documentation
 
 ## Integrations
 
@@ -423,7 +423,7 @@ container.event_bus().add_middleware(dispatcher_mw)
 await emit("user.created", user, topic="user-events")
 ```
 
-See [Integrations](INTEGRATIONS.md) for detailed guides.
+See [Integrations](docs/INTEGRATIONS.md) for detailed guides.
 
 ## Requirements
 

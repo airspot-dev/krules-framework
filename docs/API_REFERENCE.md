@@ -386,7 +386,7 @@ Whether storage persists across restarts.
 ## Quick Links
 
 - **Getting Started**
-  - [README](README.md) - Overview
+  - [README](../README.md) - Overview
   - [Quick Start](QUICKSTART.md) - 5-minute tutorial
   - [Core Concepts](CORE_CONCEPTS.md) - Framework fundamentals
 
@@ -404,8 +404,8 @@ Whether storage persists across restarts.
   - [Shell Mode](SHELL_MODE.md) - Interactive usage
 
 - **Modules**
-  - [krules_fastapi_env](krules_fastapi_env/README.md) - FastAPI integration
-  - [krules_cloudevents](krules_cloudevents/README.md) - CloudEvents support
-  - [krules_pubsub](krules_pubsub/README.md) - Pub/Sub base
-  - [krules_cloudevents_pubsub](krules_cloudevents_pubsub/README.md) - Pub/Sub + CloudEvents
-  - [redis_subjects_storage](redis_subjects_storage/README.md) - Redis storage backend
+  - [krules_fastapi_env](../krules_fastapi_env/README.md) - FastAPI integration
+  - [krules_cloudevents](../krules_cloudevents/README.md) - CloudEvents support
+  - [krules_pubsub](../krules_pubsub/README.md) - Pub/Sub base
+  - [krules_cloudevents_pubsub](../krules_cloudevents_pubsub/README.md) - Pub/Sub + CloudEvents
+  - [redis_subjects_storage](../redis_subjects_storage/README.md) - Redis storage backend
