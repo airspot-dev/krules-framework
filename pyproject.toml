@@ -40,6 +40,9 @@ fastapi = [
 redis=[
     "redis>=5.2.0",
 ]
+postgres=[
+    "asyncpg>=0.30.0",
+]
 dev = [
     # Testing
     "pytest>=7.0.0",
@@ -83,6 +86,8 @@ test = [
     # PubSub dependencies for integration tests
     "google-cloud-pubsub>=2.26.1",
     "cloudevents==1.11.0",
+    # PostgreSQL dependencies for postgres storage tests
+    "asyncpg>=0.30.0",
 ]
 
 [build-system]
@@ -97,6 +102,7 @@ packages = [
     "krules_cloudevents_pubsub",
     "krules_fastapi_env",
     "redis_subjects_storage",
+    "postgres_subjects_storage",
 ]
 
 [tool.hatch.build]
@@ -107,6 +113,7 @@ include = [
     "krules_cloudevents_pubsub/**/*.py",
     "krules_fastapi_env/**/*.py",
     "redis_subjects_storage/**/*.py",
+    "postgres_subjects_storage/**/*.py",
 ]
 exclude = [
     "tests/**/*.py",
@@ -122,6 +129,7 @@ testpaths = [
     "tests/test_cloudevents",
     "tests/test_cloudevents_pubsub",
     "tests/test_redis_subjects_storage",
+    "tests/test_postgres_subjects_storage",
     "tests/test_krules_fastapi_env"
 ]
 addopts = "-v"
