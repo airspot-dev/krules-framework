@@ -38,42 +38,43 @@ order = container.subject("order-789")
 
 ### Setting Properties
 
-Set properties using `.set()`:
+Set properties using `await .set()`:
 
 ```python
 user = container.subject("user-123")
 
 # Simple values
-user.set("name", "John Doe")
-user.set("email", "john@example.com")
-user.set("age", 30)
+await user.set("name", "John Doe")
+await user.set("email", "john@example.com")
+await user.set("age", 30)
 
 # Complex values
-user.set("address", {
+await user.set("address", {
     "street": "123 Main St",
     "city": "Boston",
     "zip": "02101"
 })
 
-user.set("tags", ["premium", "verified"])
+await user.set("tags", ["premium", "verified"])
 ```
 
 **Every `.set()` emits a `subject-property-changed` event** (unless muted).
+**All Subject methods are async in KRules 3.0** - always use `await`.
 
 ### Getting Properties
 
-Retrieve properties using `.get()`:
+Retrieve properties using `await .get()`:
 
 ```python
-name = user.get("name")  # "John Doe"
-age = user.get("age")    # 30
+name = await user.get("name")  # "John Doe"
+age = await user.get("age")    # 30
 
 # With default value
-status = user.get("status", default="inactive")  # Returns "inactive" if not set
+status = await user.get("status", default="inactive")  # Returns "inactive" if not set
 
 # Raises AttributeError if property doesn't exist and no default
 try:
-    missing = user.get("missing_property")
+    missing = await user.get("missing_property")
 except AttributeError:
     print("Property doesn't exist")
 ```
@@ -86,15 +87,15 @@ Use lambda functions for atomic updates based on current value:
 user = container.subject("user-123")
 
 # Atomic increment
-user.set("login_count", 0)
-user.set("login_count", lambda count: count + 1)  # count is current value
+await user.set("login_count", 0)
+await user.set("login_count", lambda count: count + 1)  # count is current value
 
 # Atomic append to list
-user.set("login_history", [])
-user.set("login_history", lambda hist: hist + [datetime.now()])
+await user.set("login_history", [])
+await user.set("login_history", lambda hist: hist + [datetime.now()])
 
 # Conditional update
-user.set("max_score", lambda current: max(current, new_score))
+await user.set("max_score", lambda current: max(current, new_score))
 ```
 
 **Lambda signature:**
@@ -109,26 +110,26 @@ The lambda receives the current property value and must return the new value.
 Remove properties using `.delete()`:
 
 ```python
-user.set("temp_token", "abc123")
-user.delete("temp_token")  # Property removed
+await user.set("temp_token", "abc123")
+await user.delete("temp_token")  # Property removed
 
 # Check existence first
-if "temp_token" in user:
-    user.delete("temp_token")
+if await user.has("temp_token"):
+    await user.delete("temp_token")
 ```
 
 Deleting a property emits `subject-property-deleted` event.
 
 ### Checking Existence
 
-Use `in` operator to check if property exists:
+Use `await .has()` to check if property exists:
 
 ```python
-if "email" in user:
-    print(f"Email: {user.get('email')}")
+if await user.has("email"):
+    print(f"Email: {await user.get('email')}")
 
-if "admin" not in user:
-    user.set("admin", False)
+if not await user.has("admin"):
+    await user.set("admin", False)
 ```
 
 ### Iterating Properties
@@ -136,17 +137,18 @@ if "admin" not in user:
 Iterate over property names:
 
 ```python
-user.set("name", "John")
-user.set("email", "john@example.com")
-user.set("age", 30)
+await user.set("name", "John")
+await user.set("email", "john@example.com")
+await user.set("age", 30)
 
 # Iterate over property names
-for prop_name in user:
-    value = user.get(prop_name)
+for prop_name in await user.keys():
+    value = await user.get(prop_name)
     print(f"{prop_name}: {value}")
 
 # Get property count
-count = len(user)  # 3
+keys = await user.keys()
+count = len(keys)  # 3
 ```
 
 ## Property Types
@@ -158,7 +160,7 @@ Subjects support two property types:
 Standard properties that emit `subject-property-changed` events:
 
 ```python
-user.set("email", "john@example.com")  # Emits event
+await user.set("email", "john@example.com")  # Emits event
 ```
 
 ### Extended Properties (Metadata)
@@ -167,11 +169,11 @@ Extended properties store metadata without emitting events:
 
 ```python
 # Set extended property (no event emission)
-user.set_ext("last_ip", "192.168.1.1")
-user.set_ext("user_agent", "Mozilla/5.0...")
+await user.set_ext("last_ip", "192.168.1.1")
+await user.set_ext("user_agent", "Mozilla/5.0...")
 
 # Get extended property
-ip = user.get_ext("last_ip")
+ip = await user.get_ext("last_ip")
 ```
 
 **Use extended properties for:**
@@ -219,8 +221,8 @@ Prevent event emission using `muted=True`:
 
 ```python
 # Set without emitting event
-user.set("internal_counter", 0, muted=True)
-user.set("internal_counter", lambda c: c + 1, muted=True)
+await user.set("internal_counter", 0, muted=True)
+await user.set("internal_counter", lambda c: c + 1, muted=True)
 ```
 
 **Use muted properties when:**
@@ -237,12 +239,12 @@ Subjects use an intelligent caching system to optimize performance.
 ```python
 # Default: caching enabled
 user = container.subject("user-123")
-user.set("name", "John")    # Cached
-user.set("email", "j@e.com") # Cached
-user.store()                 # Persist all changes
+await user.set("name", "John")    # Cached
+await user.set("email", "j@e.com") # Cached
+await user.store()                 # Persist all changes
 
 # Disable caching for single operation
-user.set("counter", 1, use_cache=False)  # Immediate write to storage
+await user.set("counter", 1, use_cache=False)  # Immediate write to storage
 ```
 
 **Caching behavior:**
@@ -258,31 +260,31 @@ Use caching for batch operations:
 user = container.subject("user-123")
 
 # Multiple changes cached
-user.set("name", "John")
-user.set("email", "john@example.com")
-user.set("age", 30)
-user.set("status", "active")
+await user.set("name", "John")
+await user.set("email", "john@example.com")
+await user.set("age", 30)
+await user.set("status", "active")
 
 # Persist all at once
-user.store()
+await user.store()
 ```
 
 ### When to Call `.store()`
 
 ```python
 # ✅ Good: Batch changes
-user.set("field1", "value1")
-user.set("field2", "value2")
-user.store()  # Persist together
+await user.set("field1", "value1")
+await user.set("field2", "value2")
+await user.store()  # Persist together
 
 # ❌ Inefficient: Store after each change
-user.set("field1", "value1")
-user.store()
-user.set("field2", "value2")
-user.store()
+await user.set("field1", "value1")
+await user.store()
+await user.set("field2", "value2")
+await user.store()
 
 # ✅ Good: Disable cache for hot paths
-user.set("counter", lambda c: c + 1, use_cache=False)  # Direct write
+await user.set("counter", lambda c: c + 1, use_cache=False)  # Direct write
 ```
 
 ## Advanced Operations
@@ -292,11 +294,11 @@ user.set("counter", lambda c: c + 1, use_cache=False)  # Direct write
 Convert subject to dict:
 
 ```python
-user.set("name", "John")
-user.set("email", "john@example.com")
-user.set_ext("last_login", "2024-01-01")
+await user.set("name", "John")
+await user.set("email", "john@example.com")
+await user.set_ext("last_login", "2024-01-01")
 
-data = user.dict()
+data = await user.dict()
 # {
 #     "name": "user-123",
 #     "name": "John",
@@ -313,7 +315,7 @@ Delete entire subject from storage:
 
 ```python
 user = container.subject("user-123")
-user.flush()  # Deletes subject entirely
+await user.flush()  # Deletes subject entirely
 ```
 
 **What `.flush()` does:**
@@ -335,39 +337,6 @@ user.flush()  # Deletes subject entirely
 }
 ```
 
-## AwaitableResult Pattern
-
-Subject operations return `AwaitableResult`, supporting both sync and async contexts.
-
-### Sync Context
-
-```python
-# Use without await
-user.set("email", "john@example.com")
-value = user.get("email")
-```
-
-### Async Context
-
-```python
-# Await to ensure event handlers complete
-await user.set("email", "john@example.com")
-
-# Get return values
-new_val, old_val = await user.set("counter", lambda c: c + 1)
-print(f"Incremented from {old_val} to {new_val}")
-```
-
-**When to await:**
-- In async handlers when order matters
-- When you need to ensure events complete
-- To get return values (new_value, old_value)
-
-**When sync is fine:**
-- Fire-and-forget property updates
-- Event order doesn't matter
-- Not in async context
-
 ## Subject Lifecycle
 
 ```python
@@ -375,17 +344,17 @@ print(f"Incremented from {old_val} to {new_val}")
 user = container.subject("user-123")
 
 # 2. Load from storage (automatic on first access)
-name = user.get("name")  # Loads from storage if not cached
+name = await user.get("name")  # Loads from storage if not cached
 
 # 3. Modify properties
-user.set("email", "new@example.com")  # Cached
-user.set("login_count", lambda c: c + 1)  # Cached
+await user.set("email", "new@example.com")  # Cached
+await user.set("login_count", lambda c: c + 1)  # Cached
 
 # 4. Persist changes
-user.store()  # Write to storage
+await user.store()  # Write to storage
 
 # 5. Delete subject (optional)
-user.flush()  # Remove from storage
+await user.flush()  # Remove from storage
 ```
 
 ## Common Patterns
@@ -394,12 +363,12 @@ user.flush()  # Remove from storage
 
 ```python
 # Initialize
-user.set("page_views", 0)
+await user.set("page_views", 0)
 
 # Increment atomically
 @on("page.view")
 async def track_view(ctx):
-    ctx.subject.set("page_views", lambda c: c + 1)
+    await ctx.subject.set("page_views", lambda c: c + 1)
 ```
 
 ### State Machine Pattern
@@ -426,13 +395,13 @@ async def on_status_change(ctx):
 @on(SUBJECT_PROPERTY_CHANGED)
 async def audit_changes(ctx):
     audit = container.subject(f"audit-{ctx.subject.name}")
-    audit.set("changes", lambda hist: hist + [{
+    await audit.set("changes", lambda hist: hist + [{
         "property": ctx.property_name,
         "old": ctx.old_value,
         "new": ctx.new_value,
         "timestamp": datetime.now().isoformat()
     }])
-    audit.store()
+    await audit.store()
 ```
 
 ### Derived Property Pattern
@@ -442,8 +411,8 @@ async def audit_changes(ctx):
 @when(lambda ctx: ctx.property_name in ["first_name", "last_name"])
 async def update_full_name(ctx):
     user = ctx.subject
-    full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
-    user.set("full_name", full_name, muted=True)  # Muted to avoid loop
+    full_name = f"{await user.get('first_name', '')} {await user.get('last_name', '')}".strip()
+    await user.set("full_name", full_name, muted=True)  # Muted to avoid loop
 ```
 
 ## Best Practices
@@ -454,7 +423,7 @@ async def update_full_name(ctx):
 4. **Mute when appropriate** - Prevent event storms with `muted=True`
 5. **Extended for metadata** - Use `.set_ext()` for non-reactive data
 6. **Batch updates** - Group `.set()` calls, single `.store()`
-7. **Check existence** - Use `if "prop" in subject` before `.get()`
+7. **Check existence** - Use `await subject.has("prop")` before `.get()`
 8. **Default values** - Always provide defaults: `.get("prop", default=0)`
 
 ## Anti-Patterns
@@ -465,7 +434,7 @@ async def update_full_name(ctx):
 @on(SUBJECT_PROPERTY_CHANGED)
 async def bad_handler(ctx):
     # Infinite loop! Each set() triggers this handler again
-    ctx.subject.set("counter", lambda c: c + 1)
+    await ctx.subject.set("counter", lambda c: c + 1)
 ```
 
 ✅ **Do: Mute or use extended property**
@@ -473,36 +442,36 @@ async def bad_handler(ctx):
 ```python
 @on(SUBJECT_PROPERTY_CHANGED)
 async def good_handler(ctx):
-    ctx.subject.set("counter", lambda c: c + 1, muted=True)
+    await ctx.subject.set("counter", lambda c: c + 1, muted=True)
 ```
 
 ### ❌ Don't: Forget .store()
 
 ```python
-user.set("email", "john@example.com")
+await user.set("email", "john@example.com")
 # Email not persisted!
 ```
 
 ✅ **Do: Call .store()**
 
 ```python
-user.set("email", "john@example.com")
-user.store()  # Persisted
+await user.set("email", "john@example.com")
+await user.store()  # Persisted
 ```
 
 ### ❌ Don't: Use .set() in loops without batching
 
 ```python
 for i in range(1000):
-    user.set(f"field_{i}", i, use_cache=False)  # 1000 writes!
+    await user.set(f"field_{i}", i, use_cache=False)  # 1000 writes!
 ```
 
 ✅ **Do: Batch with caching**
 
 ```python
 for i in range(1000):
-    user.set(f"field_{i}", i)  # Cached
-user.store()  # Single write
+    await user.set(f"field_{i}", i)  # Cached
+await user.store()  # Single write
 ```
 
 ## What's Next?

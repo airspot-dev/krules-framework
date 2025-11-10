@@ -81,9 +81,9 @@
   - `.flush()` - delete subject entirely
   - `.dict()` - export state
   - Iteration over properties
-- AwaitableResult Pattern
-  - Sync vs async contexts
-  - When and why to await
+- Async Operations
+  - All Subject methods are async
+  - Property access remains sync (cache mode)
 - Subject Lifecycle
 
 #### 5. **EVENT_HANDLERS.md** (Declarative Event Processing)
@@ -112,8 +112,7 @@
     - `ctx.emit()` - emit new events
     - `ctx.get_metadata()` / `ctx.set_metadata()`
 - Handler Execution
-  - Async handlers (recommended)
-  - Sync handlers (supported)
+  - Async handlers (required in v3.0)
   - Execution order
   - Error isolation (one handler error doesn't block others)
 - Emitting Events
@@ -281,34 +280,7 @@
   - Storage sharding
   - Load balancing
 
-#### 12. **SHELL_MODE.md** (Interactive/REPL Usage)
-- Overview
-  - Convenience syntax for interactive use
-  - NOT for production code
-- Attribute Access Syntax
-  - `subject.property` (get)
-  - `subject.property = value` (set)
-  - `del subject.property` (delete)
-- Special Prefixes
-  - `subject.m_property` - muted (no event emission)
-  - `subject.ext_property` - extended property
-- SubjectPropertyProxy
-  - Auto-wrapping of property values
-  - `.incr(amount=1)` for counters
-  - `.decr(amount=1)` for counters
-- Limitations
-  - Property names with special characters
-  - Python keywords
-  - Dynamic property names
-  - Type checking limitations
-- Use Cases
-  - Interactive debugging
-  - REPL exploration
-  - Quick prototyping
-  - Shell scripts (with caution)
-- Examples
-
-#### 13. **API_REFERENCE.md** (Complete API Documentation)
+#### 12. **API_REFERENCE.md** (Complete API Documentation)
 - Organized by module
 - Type signatures for all public APIs
 - Brief descriptions

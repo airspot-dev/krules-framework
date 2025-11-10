@@ -29,10 +29,10 @@ container = KRulesContainer()
 device = container.subject("device-001")
 
 # Set property → automatically emits subject-property-changed
-device.set("temperature", 75.5)
+await device.set("temperature", 75.5)
 
 # Atomic increment
-device.set("reading_count", lambda c: c + 1)
+await device.set("reading_count", lambda c: c + 1)
 ```
 
 ### 2. Event Bus (Event Router)
@@ -94,10 +94,10 @@ Here's how the three components work together:
 
 ```
 1. Property Change
-   device.set("temperature", 85)
+   await device.set("temperature", 85)
 
 2. Automatic Event Emission
-   EventBus.emit("subject-property-changed", device, {...})
+   await EventBus.emit("subject-property-changed", device, {...})
 
 3. Handler Matching
    EventBus finds handlers matching "subject-property-changed"
@@ -141,11 +141,11 @@ async def send_alert(ctx):
 
 # Step 2: Use subjects
 device = container.subject("device-123")
-device.set("status", "ok")
+await device.set("status", "ok")
 
 # Step 3: Trigger event cascade
-device.set("status", "error")
-# → Emits subject-property-changed
+await device.set("status", "error")
+# → Emits subject-property-changed (automatically)
 # → handle_error_status matches & executes
 # → Emits alert.device_error
 # → send_alert matches & executes
@@ -175,7 +175,7 @@ Events can trigger other events, creating workflows:
 @on("order.created")
 async def validate_order(ctx):
     order = ctx.subject
-    if order.get("total") > 0:
+    if await order.get("total") > 0:
         await ctx.emit("payment.required")
 
 @on("payment.required")
@@ -185,7 +185,7 @@ async def process_payment(ctx):
 
 @on("payment.completed")
 async def fulfill_order(ctx):
-    ctx.subject.set("status", "fulfilled")
+    await ctx.subject.set("status", "fulfilled")
     await ctx.emit("order.fulfilled")
 ```
 
@@ -233,9 +233,11 @@ from redis_subjects_storage.storage_impl import create_redis_storage
 container = KRulesContainer()
 
 # Override storage backend
+from redis.asyncio import Redis
+redis_client = await create_redis_client("redis://localhost:6379")
 redis_factory = create_redis_storage(
-    url="redis://localhost:6379",
-    key_prefix="app:"
+    redis_client=redis_client,
+    redis_prefix="app:"
 )
 container.subject_storage.override(providers.Object(redis_factory))
 
@@ -284,7 +286,7 @@ async def monitor_temperature(ctx):
 async def handle_critical(ctx):
     # Trigger cooling system
     device = ctx.subject
-    device.set("cooling_active", True)
+    await device.set("cooling_active", True)
 ```
 
 ### E-Commerce Order Processing
@@ -294,20 +296,20 @@ async def handle_critical(ctx):
 async def validate_order(ctx):
     order = ctx.subject
 
-    if order.get("total") > 0 and order.get("items_count") > 0:
-        order.set("status", "validated")
+    if await order.get("total") > 0 and await order.get("items_count") > 0:
+        await order.set("status", "validated")
         await ctx.emit("payment.process")
 
 @on("payment.process")
-@when(lambda ctx: ctx.subject.get("status") == "validated")
+@when(async lambda ctx: await ctx.subject.get("status") == "validated")
 async def process_payment(ctx):
     # Process payment...
-    ctx.subject.set("payment_status", "completed")
+    await ctx.subject.set("payment_status", "completed")
     await ctx.emit("order.ship")
 
 @on("order.ship")
 async def ship_order(ctx):
-    ctx.subject.set("status", "shipped")
+    await ctx.subject.set("status", "shipped")
     await ctx.emit("notification.order_shipped")
 ```
 
@@ -317,8 +319,8 @@ async def ship_order(ctx):
 @on("user.registered")
 async def setup_user(ctx):
     user = ctx.subject
-    user.set("status", "active")
-    user.set("created_at", datetime.now().isoformat())
+    await user.set("status", "active")
+    await user.set("created_at", datetime.now().isoformat())
     await ctx.emit("email.send_welcome")
 
 @on(SUBJECT_PROPERTY_CHANGED)
@@ -388,8 +390,8 @@ async def send_notification(ctx):
 4. **Name Events Clearly** - Use `entity.action` pattern (e.g., `user.created`)
 5. **Use Filters Liberally** - Prefer `@when` over `if` in handlers
 6. **Avoid Infinite Loops** - Be careful with property changes in handlers
-7. **Call .store() Explicitly** - Properties aren't persisted until `.store()`
-8. **Await emit() in Handlers** - Ensures event cascade completes
+7. **Call await .store() Explicitly** - Properties aren't persisted until `await .store()`
+8. **Await All Async Methods** - Subject methods (.set, .get, .store, etc.) and emit() require await
 
 ## What's Next?
 

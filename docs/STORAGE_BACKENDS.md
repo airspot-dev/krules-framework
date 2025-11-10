@@ -12,35 +12,35 @@ class SubjectStorage:
         """Initialize storage for a subject"""
         pass
 
-    def load(self) -> tuple[dict, dict]:
+    async def load(self) -> tuple[dict, dict]:
         """Load subject state
         Returns: (properties_dict, ext_properties_dict)
         """
         pass
 
-    def store(self, inserts=[], updates=[], deletes=[]):
+    async def store(self, inserts=[], updates=[], deletes=[]):
         """Persist property changes in batch"""
         pass
 
-    def set(self, prop) -> tuple[Any, Any]:
+    async def set(self, prop) -> tuple[Any, Any]:
         """Set single property atomically
         Returns: (new_value, old_value)
         """
         pass
 
-    def get(self, prop) -> Any:
+    async def get(self, prop) -> Any:
         """Get property value"""
         pass
 
-    def delete(self, prop):
+    async def delete(self, prop):
         """Delete property"""
         pass
 
-    def flush(self):
+    async def flush(self):
         """Delete entire subject from storage"""
         pass
 
-    def get_ext_props(self) -> dict:
+    async def get_ext_props(self) -> dict:
         """Get all extended properties"""
         pass
 
@@ -74,7 +74,7 @@ from krules_core.container import KRulesContainer
 # Default - uses EmptySubjectStorage
 container = KRulesContainer()
 user = container.subject("user-123")
-user.set("email", "john@example.com")
+await user.set("email", "john@example.com")
 # Data only exists in memory
 ```
 
@@ -111,7 +111,7 @@ from redis_subjects_storage.storage_impl import create_redis_storage
 # Create container
 container = KRulesContainer()
 
-# Create Redis storage factory
+# Create Redis storage factory (uses redis.asyncio)
 redis_factory = create_redis_storage(
     url="redis://localhost:6379",
     key_prefix="myapp:"
@@ -120,10 +120,10 @@ redis_factory = create_redis_storage(
 # Override storage
 container.subject_storage.override(providers.Object(redis_factory))
 
-# Now all subjects use Redis
+# Now all subjects use Redis (fully async)
 user = container.subject("user-123")
-user.set("email", "john@example.com")
-user.store()  # Persisted in Redis
+await user.set("email", "john@example.com")
+await user.store()  # Persisted in Redis
 ```
 
 **Configuration Options:**
@@ -177,7 +177,7 @@ Redis storage uses `WATCH`/`MULTI` for atomic updates with lambda values:
 
 ```python
 # Atomic increment
-user.set("login_count", lambda c: c + 1, use_cache=False)
+await user.set("login_count", lambda c: c + 1, use_cache=False)
 
 # Internally uses Redis WATCH to ensure atomicity
 ```
@@ -369,8 +369,8 @@ container.subject_storage.override(providers.Object(sqlite_factory))
 
 # Use subjects
 user = container.subject("user-123")
-user.set("email", "john@example.com")
-user.store()  # Persisted in SQLite
+await user.set("email", "john@example.com")
+await user.store()  # Persisted in SQLite
 ```
 
 ## Storage Patterns
@@ -444,39 +444,39 @@ cache = container.subject("cache-temp-data")
 
 ```python
 # ✅ Batch operations - use cache
-user.set("field1", "value1")
-user.set("field2", "value2")
-user.set("field3", "value3")
-user.store()  # Single write to storage
+await user.set("field1", "value1")
+await user.set("field2", "value2")
+await user.set("field3", "value3")
+await user.store()  # Single write to storage
 
 # ✅ Hot path - disable cache
-user.set("counter", lambda c: c + 1, use_cache=False)  # Direct atomic write
+await user.set("counter", lambda c: c + 1, use_cache=False)  # Direct atomic write
 
 # ❌ Inefficient - store after each change
-user.set("field1", "value1")
-user.store()
-user.set("field2", "value2")
-user.store()
+await user.set("field1", "value1")
+await user.store()
+await user.set("field2", "value2")
+await user.store()
 ```
 
 ### Connection Pooling
 
-For Redis:
+For Redis (async):
 
 ```python
-import redis
+from redis.asyncio import Redis, ConnectionPool
 
-# Connection pool
-pool = redis.ConnectionPool(
+# Async connection pool
+pool = ConnectionPool(
     host='localhost',
     port=6379,
     db=0,
     max_connections=50
 )
 
-redis_client = redis.Redis(connection_pool=pool)
+redis_client = Redis(connection_pool=pool)
 
-# Use with storage
+# Use with storage (uses async Redis client)
 redis_factory = create_redis_storage(
     url="redis://localhost:6379",
     key_prefix="app:"
@@ -498,13 +498,13 @@ redis_factory = create_redis_storage(
 3. **Batch writes** - Use caching for batch operations:
    ```python
    for i in range(100):
-       subject.set(f"field{i}", i)
-   subject.store()  # Single write
+       await subject.set(f"field{i}", i)
+   await subject.store()  # Single write
    ```
 
 4. **Atomic operations** - Use `use_cache=False` for atomicity:
    ```python
-   subject.set("counter", lambda c: c + 1, use_cache=False)
+   await subject.set("counter", lambda c: c + 1, use_cache=False)
    ```
 
 5. **Test with real storage** - Test with production storage backend in integration tests
@@ -516,35 +516,36 @@ redis_factory = create_redis_storage(
 ```python
 import pytest
 
-def test_storage_interface():
+@pytest.mark.asyncio
+async def test_storage_interface():
     """Test custom storage implementation"""
     storage = MySQLiteStorage("test-subject")
 
     # Test load (should be empty)
-    props, ext_props = storage.load()
+    props, ext_props = await storage.load()
     assert props == {}
     assert ext_props == {}
 
     # Test set
     from krules_core.subject import SubjectProperty
     prop = SubjectProperty("email", "test@example.com")
-    new_val, old_val = storage.set(prop)
+    new_val, old_val = await storage.set(prop)
     assert new_val == "test@example.com"
     assert old_val is None
 
     # Test get
-    value = storage.get(prop)
+    value = await storage.get(prop)
     assert value == "test@example.com"
 
     # Test delete
-    storage.delete(prop)
+    await storage.delete(prop)
     with pytest.raises(AttributeError):
-        storage.get(prop)
+        await storage.get(prop)
 
     # Test flush
-    storage.set(SubjectProperty("name", "John"))
-    storage.flush()
-    props, ext_props = storage.load()
+    await storage.set(SubjectProperty("name", "John"))
+    await storage.flush()
+    props, ext_props = await storage.load()
     assert props == {}
 ```
 

@@ -39,7 +39,7 @@ on, when, middleware, emit = container.handlers()
 @on("order.created")
 async def handle_order(ctx):
     print(f"Received order: {ctx.subject.name}")
-    ctx.subject.set("status", "processing")
+    await ctx.subject.set("status", "processing")
 
 # Create FastAPI app that receives CloudEvents
 app = KRulesApp(krules_container=container)
@@ -200,7 +200,7 @@ container.event_bus().add_middleware(dispatcher_mw)
 # Now all ctx.emit() calls also publish to Pub/Sub
 @on("sensor.reading")
 async def process_reading(ctx):
-    # This emit triggers local handlers AND publishes to Pub/Sub
+    # Emits locally AND publishes to Pub/Sub (via middleware)
     await ctx.emit("sensor.processed", ctx.subject, {"value": ctx.payload["value"]})
 ```
 
@@ -240,7 +240,7 @@ container.event_bus().add_middleware(create_dispatcher_middleware(pubsub_dispatc
 # Define handler
 @on("order.created")
 async def process_order(ctx):
-    ctx.subject.set("status", "processing")
+    await ctx.subject.set("status", "processing")
     # Emits locally AND publishes to Pub/Sub (via middleware)
     await ctx.emit("order.processed", ctx.subject)
 
@@ -269,7 +269,7 @@ container.event_bus().add_middleware(create_dispatcher_middleware(http_dispatche
 # Define handler
 @on("order.processed")
 async def notify_fulfillment(ctx):
-    ctx.subject.set("notified", True)
+    await ctx.subject.set("notified", True)
     # Emits locally AND sends HTTP CloudEvent (via middleware)
     await ctx.emit("fulfillment.requested", ctx.subject)
 

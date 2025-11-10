@@ -49,7 +49,7 @@ async def ship_order(ctx):
 @on(SUBJECT_PROPERTY_CHANGED)
 async def bad_handler(ctx):
     # This triggers the same handler again!
-    ctx.subject.set("counter", lambda c: c + 1)
+    await ctx.subject.set("counter", lambda c: c + 1)
 ```
 
 **Solutions:**
@@ -58,7 +58,7 @@ async def bad_handler(ctx):
 ```python
 @on(SUBJECT_PROPERTY_CHANGED)
 async def good_handler(ctx):
-    ctx.subject.set("counter", lambda c: c + 1, muted=True)
+    await ctx.subject.set("counter", lambda c: c + 1, muted=True)
 ```
 
 **2. Use filters:**
@@ -66,14 +66,14 @@ async def good_handler(ctx):
 @on(SUBJECT_PROPERTY_CHANGED)
 @when(lambda ctx: ctx.property_name != "counter")
 async def filtered_handler(ctx):
-    ctx.subject.set("counter", lambda c: c + 1)
+    await ctx.subject.set("counter", lambda c: c + 1)
 ```
 
 **3. Use extended properties:**
 ```python
 @on(SUBJECT_PROPERTY_CHANGED)
 async def handler_with_ext(ctx):
-    ctx.subject.set_ext("internal_counter", lambda c: c + 1)
+    await ctx.subject.set_ext("internal_counter", lambda c: c + 1)
 ```
 
 ### Circuit Breaker Pattern
@@ -159,11 +159,11 @@ async def error_handler(ctx, next):
 async def send_to_dlq(ctx):
     """Send failed events to dead letter queue"""
     dlq_subject = container.subject(f"dlq-{uuid.uuid4()}")
-    dlq_subject.set("original_event", ctx.payload["original_event"])
-    dlq_subject.set("error", ctx.payload["error"])
-    dlq_subject.set("subject_name", ctx.payload["subject"])
-    dlq_subject.set("timestamp", ctx.payload["timestamp"])
-    dlq_subject.store()
+    await dlq_subject.set("original_event", ctx.payload["original_event"])
+    await dlq_subject.set("error", ctx.payload["error"])
+    await dlq_subject.set("subject_name", ctx.payload["subject"])
+    await dlq_subject.set("timestamp", ctx.payload["timestamp"])
+    await dlq_subject.store()
 
     # Optionally: send to external DLQ service
     # await dlq_service.send(ctx.payload)
@@ -173,22 +173,22 @@ async def send_to_dlq(ctx):
 
 ```python
 @on("api.call")
-@when(lambda ctx: ctx.subject.get("retry_count", 0) < 3)
+@when(async lambda ctx: await ctx.subject.get("retry_count", 0) < 3)
 async def call_with_retry(ctx):
     """Retry failed API calls"""
     try:
         response = await api_client.call()
 
         if response.ok:
-            ctx.subject.set("retry_count", 0, muted=True)
-            ctx.subject.set("last_success", datetime.now().isoformat())
+            await ctx.subject.set("retry_count", 0, muted=True)
+            await ctx.subject.set("last_success", datetime.now().isoformat())
         else:
             raise Exception(f"API error: {response.status}")
 
     except Exception as e:
         # Increment retry count
-        retry_count = ctx.subject.get("retry_count", 0) + 1
-        ctx.subject.set("retry_count", retry_count, muted=True)
+        retry_count = await ctx.subject.get("retry_count", 0) + 1
+        await ctx.subject.set("retry_count", retry_count, muted=True)
 
         if retry_count < 3:
             # Exponential backoff
@@ -210,13 +210,13 @@ async def call_with_retry(ctx):
 # ✅ Efficient: batch updates
 user = container.subject("user-123")
 for i in range(100):
-    user.set(f"field{i}", i)  # Cached
-user.store()  # Single write
+    await user.set(f"field{i}", i)  # Cached
+await user.store()  # Single write
 
 # ❌ Inefficient: individual writes
 user = container.subject("user-123")
 for i in range(100):
-    user.set(f"field{i}", i, use_cache=False)  # 100 writes!
+    await user.set(f"field{i}", i, use_cache=False)  # 100 writes!
 ```
 
 ### Cache Strategy
@@ -227,16 +227,16 @@ for i in range(100):
 async def record_reading(ctx):
     sensor = ctx.subject
     # Atomic write to storage
-    sensor.set("last_reading", ctx.payload["value"], use_cache=False)
+    await sensor.set("last_reading", ctx.payload["value"], use_cache=False)
 
 # Batch updates: use cache
 @on("user.profile_update")
 async def update_profile(ctx):
     user = ctx.subject
-    user.set("name", ctx.payload["name"])
-    user.set("email", ctx.payload["email"])
-    user.set("address", ctx.payload["address"])
-    user.store()  # Single write
+    await user.set("name", ctx.payload["name"])
+    await user.set("email", ctx.payload["email"])
+    await user.set("address", ctx.payload["address"])
+    await user.store()  # Single write
 ```
 
 ### Handler Concurrency
@@ -346,9 +346,11 @@ KRules applications scale horizontally with shared storage:
 ```python
 # Each instance uses Redis
 container = KRulesContainer()
+from redis.asyncio import Redis
+redis_client = await create_redis_client("redis://shared-redis:6379")
 redis_factory = create_redis_storage(
-    url="redis://shared-redis:6379",
-    key_prefix="app:"
+    redis_client=redis_client,
+    redis_prefix="app:"
 )
 container.subject_storage.override(providers.Object(redis_factory))
 

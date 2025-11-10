@@ -35,6 +35,7 @@ Create or retrieve a subject.
 ```python
 container = KRulesContainer()
 user = container.subject("user-123")
+await user.set("email", "john@example.com")
 ```
 
 #### `handlers() -> tuple[Callable, Callable, Callable, Callable]`
@@ -64,9 +65,9 @@ Dynamic entity with reactive properties.
 
 **Methods:**
 
-#### `set(prop: str, value: Any, muted: bool = False, use_cache: bool | None = None) -> AwaitableResult`
+#### `async set(prop: str, value: Any, muted: bool = False, use_cache: bool | None = None) -> tuple[Any, Any]`
 
-Set property value.
+Set property value (async).
 
 **Parameters:**
 - `prop` (str): Property name
@@ -74,18 +75,18 @@ Set property value.
 - `muted` (bool): If True, don't emit property change event
 - `use_cache` (bool | None): Override caching behavior
 
-**Returns:** AwaitableResult[(new_value, old_value)]
+**Returns:** tuple[(new_value, old_value)]
 
 **Example:**
 ```python
-user.set("email", "john@example.com")
-user.set("counter", lambda c: c + 1)
-user.set("internal", 0, muted=True)
+await user.set("email", "john@example.com")
+await user.set("counter", lambda c: c + 1)
+await user.set("internal", 0, muted=True)
 ```
 
-#### `get(prop: str, use_cache: bool | None = None, default: Any = None) -> Any`
+#### `async get(prop: str, use_cache: bool | None = None, default: Any = None) -> Any`
 
-Get property value.
+Get property value (async).
 
 **Parameters:**
 - `prop` (str): Property name
@@ -98,55 +99,55 @@ Get property value.
 
 **Example:**
 ```python
-email = user.get("email")
-status = user.get("status", default="inactive")
+email = await user.get("email")
+status = await user.get("status", default="inactive")
 ```
 
-#### `delete(prop: str, muted: bool = False, use_cache: bool | None = None) -> AwaitableResult`
+#### `async delete(prop: str, muted: bool = False, use_cache: bool | None = None) -> None`
 
-Delete property.
+Delete property (async).
 
 **Parameters:**
 - `prop` (str): Property name
 - `muted` (bool): If True, don't emit property deleted event
 - `use_cache` (bool | None): Override caching behavior
 
-**Returns:** AwaitableResult[None]
+**Returns:** None
 
 **Example:**
 ```python
-user.delete("temp_token")
+await user.delete("temp_token")
 ```
 
-#### `set_ext(prop: str, value: Any, use_cache: bool | None = None) -> AwaitableResult`
+#### `async set_ext(prop: str, value: Any, use_cache: bool | None = None) -> tuple[Any, Any]`
 
-Set extended property (metadata, no events).
+Set extended property (metadata, no events - async).
 
-#### `get_ext(prop: str, use_cache: bool | None = None) -> Any`
+#### `async get_ext(prop: str, use_cache: bool | None = None, default: Any = None) -> Any`
 
-Get extended property.
+Get extended property (async).
 
-#### `delete_ext(prop: str, use_cache: bool | None = None) -> AwaitableResult`
+#### `async delete_ext(prop: str, use_cache: bool | None = None) -> None`
 
-Delete extended property.
+Delete extended property (async).
 
-#### `store() -> None`
+#### `async store() -> None`
 
-Persist cached changes to storage.
+Persist cached changes to storage (async).
 
-#### `flush() -> AwaitableResult`
+#### `async flush() -> None`
 
-Delete entire subject from storage and emit deletion events.
+Delete entire subject from storage and emit deletion events (async).
 
-#### `dict() -> dict`
+#### `async dict() -> dict`
 
-Export subject to dictionary.
+Export subject to dictionary (async).
 
 **Returns:** Dict with name, properties, and extended properties
 
 **Example:**
 ```python
-data = user.dict()
+data = await user.dict()
 # {"name": "user-123", "email": "john@example.com", "ext": {...}}
 ```
 
@@ -182,9 +183,9 @@ Register event handler.
 
 **Returns:** Handler instance
 
-#### `emit(event_type: str, subject: Any, payload: dict, **extra) -> None`
+#### `async emit(event_type: str, subject: Any, payload: dict, **extra) -> None`
 
-Emit event to all matching handlers.
+Emit event to all matching handlers (async).
 
 **Parameters:**
 - `event_type` (str): Event type
@@ -217,9 +218,9 @@ Context passed to handlers.
 
 **Methods:**
 
-#### `emit(event_type: str, payload: dict | None = None, subject: Any | None = None, **extra) -> None`
+#### `async emit(event_type: str, payload: dict | None = None, subject: Any | None = None, **extra) -> None`
 
-Emit new event from handler.
+Emit new event from handler (async).
 
 #### `get_metadata(key: str, default: Any = None) -> Any`
 
@@ -285,9 +286,9 @@ async def log_middleware(ctx, next):
     await next()
 ```
 
-### emit(event_type: str, subject: Any, payload: dict | None = None, **extra)
+### async emit(event_type: str, subject: Any, payload: dict | None = None, **extra)
 
-Emit event directly (outside handlers).
+Emit event directly (outside handlers - async).
 
 **Parameters:**
 - `event_type` (str): Event type
@@ -339,37 +340,37 @@ Interface for storage backends.
 
 **Methods:**
 
-#### `load() -> tuple[dict, dict]`
+#### `async load() -> tuple[dict, dict]`
 
-Load subject state from storage.
+Load subject state from storage (async).
 
 **Returns:** (properties_dict, ext_properties_dict)
 
-#### `store(inserts: list = [], updates: list = [], deletes: list = []) -> None`
+#### `async store(inserts: list = [], updates: list = [], deletes: list = []) -> None`
 
-Persist property changes in batch.
+Persist property changes in batch (async).
 
-#### `set(prop: SubjectProperty) -> tuple[Any, Any]`
+#### `async set(prop: SubjectProperty) -> tuple[Any, Any]`
 
-Set single property atomically.
+Set single property atomically (async).
 
 **Returns:** (new_value, old_value)
 
-#### `get(prop: SubjectProperty) -> Any`
+#### `async get(prop: SubjectProperty) -> Any`
 
-Get property value.
+Get property value (async).
 
-#### `delete(prop: SubjectProperty) -> None`
+#### `async delete(prop: SubjectProperty) -> None`
 
-Delete property.
+Delete property (async).
 
-#### `flush() -> None`
+#### `async flush() -> None`
 
-Delete entire subject from storage.
+Delete entire subject from storage (async).
 
-#### `get_ext_props() -> dict`
+#### `async get_ext_props() -> dict`
 
-Get all extended properties.
+Get all extended properties (async).
 
 #### `is_concurrency_safe() -> bool`
 

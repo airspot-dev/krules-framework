@@ -485,7 +485,7 @@ async def tenant_middleware(ctx, next):
     ctx.set_metadata("tenant_id", tenant)
 
     # Validate subject belongs to tenant
-    subject_tenant = ctx.subject.get_ext("tenant_id")
+    subject_tenant = await ctx.subject.get_ext("tenant_id")
     if subject_tenant and subject_tenant != tenant:
         logger.warning(f"Tenant mismatch: {tenant} vs {subject_tenant}")
         return

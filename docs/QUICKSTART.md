@@ -28,16 +28,16 @@ async def welcome_user(ctx):
     """Send welcome message to new users"""
     user = ctx.subject
 
-    print(f"Welcome {user.get('email')}!")
+    print(f"Welcome {await user.get('email')}!")
 
     # Set user properties
-    user.set("status", "active")
-    user.set("registration_date", datetime.now().isoformat())
-    user.set("login_count", 0)
+    await user.set("status", "active")
+    await user.set("registration_date", datetime.now().isoformat())
+    await user.set("login_count", 0)
 
     # Emit follow-up event
     await ctx.emit("email.send_welcome", {
-        "to": user.get("email"),
+        "to": await user.get("email"),
         "template": "welcome"
     })
 
@@ -59,16 +59,16 @@ async def send_email(ctx):
 async def main():
     # Create a user subject
     user = container.subject("user-123")
-    user.set("email", "john@example.com")
-    user.set("name", "John Doe")
+    await user.set("email", "john@example.com")
+    await user.set("name", "John Doe")
 
     # Emit registration event
     await emit("user.registered", user, {"ip": "192.168.1.1"})
 
     # Persist user to storage
-    user.store()
+    await user.store()
 
-    print("\nUser data:", user.dict())
+    print("\nUser data:", await user.dict())
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -115,8 +115,8 @@ Subjects are entities with dynamic properties:
 
 ```python
 user = container.subject("user-123")
-user.set("email", "john@example.com")
-email = user.get("email")
+await user.set("email", "john@example.com")
+email = await user.get("email")
 ```
 
 ### Event Handlers
@@ -161,7 +161,7 @@ Use `@when` to conditionally execute handlers:
 ```python
 @on("payment.process")
 @when(lambda ctx: ctx.payload.get("amount") > 0)
-@when(lambda ctx: ctx.subject.get("verified") == True)
+@when(lambda ctx: await ctx.subject.get("verified") == True)
 async def process_payment(ctx):
     """Only process for verified users with amount > 0"""
     amount = ctx.payload.get("amount")
@@ -209,8 +209,8 @@ container.subject_storage.override(providers.Object(redis_factory))
 
 # Now subjects are persisted in Redis
 user = container.subject("user-123")
-user.set("email", "john@example.com")
-user.store()  # Saves to Redis
+await user.set("email", "john@example.com")
+await user.store()  # Saves to Redis
 ```
 
 ## Testing Your Handlers
@@ -231,13 +231,13 @@ async def test_user_registration(container):
     @on("user.registered")
     async def handler(ctx):
         results.append("registered")
-        ctx.subject.set("status", "active")
+        await ctx.subject.set("status", "active")
 
     user = container.subject("test-user")
     await emit("user.registered", user)
 
     assert results == ["registered"]
-    assert user.get("status") == "active"
+    assert await user.get("status") == "active"
 ```
 
 ## What's Next?
@@ -258,12 +258,12 @@ Chain events to create workflows:
 ```python
 @on("order.created")
 async def create_order(ctx):
-    ctx.subject.set("status", "pending")
+    await ctx.subject.set("status", "pending")
     await ctx.emit("order.validate")
 
 @on("order.validate")
 async def validate_order(ctx):
-    if ctx.subject.get("amount") > 0:
+    if await ctx.subject.get("amount") > 0:
         await ctx.emit("payment.process")
 
 @on("payment.process")
@@ -280,10 +280,10 @@ Use lambda to update properties atomically:
 @on("user.login")
 async def track_login(ctx):
     # Atomic increment
-    ctx.subject.set("login_count", lambda count: count + 1)
+    await ctx.subject.set("login_count", lambda count: count + 1)
 
     # Atomic append to list
-    ctx.subject.set("login_history", lambda hist: hist + [datetime.now()])
+    await ctx.subject.set("login_history", lambda hist: hist + [datetime.now()])
 ```
 
 ### Reusable Filters
@@ -291,11 +291,11 @@ async def track_login(ctx):
 Define filters once, reuse everywhere:
 
 ```python
-def is_active(ctx):
-    return ctx.subject.get("status") == "active"
+async def is_active(ctx):
+    return await ctx.subject.get("status") == "active"
 
-def is_verified(ctx):
-    return ctx.subject.get("verified") == True
+async def is_verified(ctx):
+    return await ctx.subject.get("verified") == True
 
 @on("user.action")
 @when(is_active)

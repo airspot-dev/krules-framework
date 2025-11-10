@@ -60,13 +60,13 @@ async def test_handler():
     @on("user.created")
     async def handler(ctx):
         results.append(ctx.event_type)
-        ctx.subject.set("status", "active")
+        await ctx.subject.set("status", "active")
 
     user = container.subject("test-user")
     await emit("user.created", user)
 
     assert results == ["user.created"]
-    assert user.get("status") == "active"
+    assert await user.get("status") == "active"
 ```
 
 ### Testing Filters
@@ -168,7 +168,7 @@ async def test_complex_flow():
     @on("user.registered")
     async def create_user(ctx):
         results["user_created"] = True
-        ctx.subject.set("status", "pending")
+        await ctx.subject.set("status", "pending")
         await ctx.emit("email.send_welcome")
 
     @on(SUBJECT_PROPERTY_CHANGED)
@@ -184,7 +184,7 @@ async def test_complex_flow():
     await emit("user.registered", user)
 
     assert all(results.values())
-    assert user.get("status") == "pending"
+    assert await user.get("status") == "pending"
 ```
 
 ## Testing Middleware
@@ -258,24 +258,24 @@ async def test_subject_state():
     user = container.subject("user-123")
 
     # Test set/get
-    user.set("email", "john@example.com")
-    assert user.get("email") == "john@example.com"
+    await user.set("email", "john@example.com")
+    assert await user.get("email") == "john@example.com"
 
     # Test default
-    assert user.get("missing", default="default") == "default"
+    assert await user.get("missing", default="default") == "default"
 
     # Test lambda
-    user.set("counter", 0)
-    user.set("counter", lambda c: c + 1)
-    assert user.get("counter") == 1
+    await user.set("counter", 0)
+    await user.set("counter", lambda c: c + 1)
+    assert await user.get("counter") == 1
 
     # Test existence
-    assert "email" in user
-    assert "missing" not in user
+    assert await user.has("email")
+    assert not await user.has("missing")
 
     # Test delete
-    user.delete("email")
-    assert "email" not in user
+    await user.delete("email")
+    assert not await user.has("email")
 ```
 
 ### Subject Persistence Test
@@ -287,14 +287,14 @@ async def test_subject_persistence():
 
     # Create and store
     user = container.subject("user-123")
-    user.set("email", "john@example.com")
-    user.set("age", 30)
-    user.store()
+    await user.set("email", "john@example.com")
+    await user.set("age", 30)
+    await user.store()
 
     # Reload (simulates new instance)
     user2 = container.subject("user-123")
-    assert user2.get("email") == "john@example.com"
-    assert user2.get("age") == 30
+    assert await user2.get("email") == "john@example.com"
+    assert await user2.get("age") == 30
 ```
 
 ## Testing with Redis
@@ -303,13 +303,13 @@ async def test_subject_persistence():
 
 ```python
 import pytest
-import redis
+from redis.asyncio import Redis
 from dependency_injector import providers
 from krules_core.container import KRulesContainer
 from redis_subjects_storage.storage_impl import create_redis_storage
 
 @pytest.fixture
-def redis_container():
+async def redis_container():
     """Container with Redis storage"""
     container = KRulesContainer()
 
@@ -322,19 +322,20 @@ def redis_container():
     yield container
 
     # Cleanup: delete test keys
-    r = redis.Redis.from_url("redis://localhost:6379")
-    for key in r.scan_iter("s:test:*"):
-        r.delete(key)
+    r = await Redis.from_url("redis://localhost:6379")
+    async for key in r.scan_iter("s:test:*"):
+        await r.delete(key)
+    await r.close()
 
 @pytest.mark.asyncio
 async def test_with_redis(redis_container):
     user = redis_container.subject("user-123")
-    user.set("email", "john@example.com")
-    user.store()
+    await user.set("email", "john@example.com")
+    await user.store()
 
     # Verify persistence
     user2 = redis_container.subject("user-123")
-    assert user2.get("email") == "john@example.com"
+    assert await user2.get("email") == "john@example.com"
 ```
 
 ## Mocking
@@ -357,7 +358,7 @@ async def test_with_mock_api(mock_api):
     @on("user.action")
     async def handler(ctx):
         response = await external_api_client.call_api()
-        ctx.subject.set("api_result", response["status"])
+        await ctx.subject.set("api_result", response["status"])
 
     user = container.subject("test-user")
     await emit("user.action", user)
@@ -366,7 +367,7 @@ async def test_with_mock_api(mock_api):
     mock_api.call_api.assert_called_once()
 
     # Verify result
-    assert user.get("api_result") == "ok"
+    assert await user.get("api_result") == "ok"
 ```
 
 ### Mock Storage
@@ -467,11 +468,11 @@ async def test_with_fixtures(handlers, test_subject):
 
     @on("test.event")
     async def handler(ctx):
-        ctx.subject.set("handled", True)
+        await ctx.subject.set("handled", True)
 
     await emit("test.event", test_subject)
 
-    assert test_subject.get("handled") == True
+    assert await test_subject.get("handled") == True
 ```
 
 ## Integration Tests
@@ -496,17 +497,17 @@ async def test_full_flow():
 
     # Execute real workflow
     user = container.subject("user-integration-test")
-    user.set("email", "test@example.com")
-    user.store()
+    await user.set("email", "test@example.com")
+    await user.store()
 
     await emit("user.registered", user)
 
     # Verify end state
-    assert user.get("status") == "active"
-    assert user.get("welcome_sent") == True
+    assert await user.get("status") == "active"
+    assert await user.get("welcome_sent") == True
 
     # Cleanup
-    user.flush()
+    await user.flush()
 ```
 
 ## Test Organization

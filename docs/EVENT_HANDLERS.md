@@ -179,8 +179,8 @@ Stack `@when` decorators - **all must pass**:
 ```python
 @on("admin.action")
 @when(lambda ctx: ctx.payload.get("role") == "admin")
-@when(lambda ctx: ctx.subject.get("verified") == True)
-@when(lambda ctx: not ctx.subject.get("suspended", False))
+@when(lambda ctx: await ctx.subject.get("verified") == True)
+@when(lambda ctx: not await ctx.subject.get("suspended", False))
 async def admin_action(ctx):
     # Only for verified, non-suspended admins
     pass
@@ -191,21 +191,21 @@ async def admin_action(ctx):
 Extract filters into functions:
 
 ```python
-def is_active(ctx):
-    return ctx.subject.get("status") == "active"
+async def is_active(ctx):
+    return await ctx.subject.get("status") == "active"
 
-def is_premium(ctx):
-    return ctx.subject.get("tier") == "premium"
+async def is_premium(ctx):
+    return await ctx.subject.get("tier") == "premium"
 
-def has_credits(ctx):
-    return ctx.subject.get("credits", 0) > 0
+async def has_credits(ctx):
+    return await ctx.subject.get("credits", 0) > 0
 
 @on("feature.use")
 @when(is_active)
 @when(is_premium)
 @when(has_credits)
 async def use_premium_feature(ctx):
-    ctx.subject.set("credits", lambda c: c - 1)
+    await ctx.subject.set("credits", lambda c: c - 1)
 ```
 
 ### Async Filters
@@ -263,7 +263,9 @@ Both work identically. Use whichever reads better.
 
 ## Handler Execution
 
-### Async Handlers (Recommended)
+### Async Handlers (Required)
+
+**All handlers must be async in KRules 3.0. Sync handlers are no longer supported.**
 
 ```python
 @on("user.action")
@@ -275,17 +277,6 @@ async def handler(ctx):
     async with httpx.AsyncClient() as client:
         await client.post("https://api.example.com/webhook")
 ```
-
-### Sync Handlers (Supported)
-
-```python
-@on("user.action")
-def sync_handler(ctx):
-    # No await
-    print(f"Event: {ctx.event_type}")
-```
-
-**Note:** Sync handlers block the event loop. Prefer async when possible.
 
 ### Execution Order
 
@@ -329,7 +320,7 @@ Use `ctx.emit()`:
 @on("order.created")
 async def process_order(ctx):
     order = ctx.subject
-    order.set("status", "processing")
+    await order.set("status", "processing")
 
     # Emit new event
     await ctx.emit("order.processing", {
@@ -397,7 +388,7 @@ Chain events to create workflows:
 ```python
 @on("order.submitted")
 async def validate_order(ctx):
-    if ctx.subject.get("total") > 0:
+    if await ctx.subject.get("total") > 0:
         await ctx.emit("order.validated")
 
 @on("order.validated")
@@ -407,7 +398,7 @@ async def process_payment(ctx):
 
 @on("payment.completed")
 async def ship_order(ctx):
-    ctx.subject.set("status", "shipped")
+    await ctx.subject.set("status", "shipped")
     await ctx.emit("order.shipped")
 ```
 
@@ -438,14 +429,14 @@ async def aggregate_readings(ctx):
     reading = ctx.payload["value"]
 
     # Append to readings list
-    device.set("readings", lambda r: r + [reading])
+    await device.set("readings", lambda r: r + [reading])
 
     # If we have 10 readings, calculate average
-    readings = device.get("readings", default=[])
+    readings = await device.get("readings", default=[])
     if len(readings) >= 10:
         avg = sum(readings) / len(readings)
-        device.set("average", avg)
-        device.set("readings", [])  # Reset
+        await device.set("average", avg)
+        await device.set("readings", [])  # Reset
         await ctx.emit("sensor.average_calculated", {"average": avg})
 ```
 
@@ -472,23 +463,23 @@ async def state_machine(ctx):
 
 ```python
 @on("api.call")
-@when(lambda ctx: ctx.subject.get("retry_count", 0) < 3)
+@when(lambda ctx: await ctx.subject.get("retry_count", 0) < 3)
 async def call_api_with_retry(ctx):
     try:
         # Call API
         response = await api_client.call()
 
         if response.ok:
-            ctx.subject.set("retry_count", 0)  # Reset
+            await ctx.subject.set("retry_count", 0)  # Reset
         else:
             raise Exception("API error")
 
     except Exception as e:
         # Increment retry count
-        ctx.subject.set("retry_count", lambda c: c + 1)
+        await ctx.subject.set("retry_count", lambda c: c + 1)
 
         # Retry after delay
-        await asyncio.sleep(2 ** ctx.subject.get("retry_count"))
+        await asyncio.sleep(2 ** await ctx.subject.get("retry_count"))
         await ctx.emit("api.call")  # Retry
 ```
 
@@ -539,7 +530,7 @@ async def on_subject_delete(ctx):
 @on(SUBJECT_PROPERTY_CHANGED)
 async def bad_handler(ctx):
     # Infinite loop! Each set triggers this handler
-    ctx.subject.set("counter", lambda c: c + 1)
+    await ctx.subject.set("counter", lambda c: c + 1)
 ```
 
 ✅ **Do: Mute or use filters**
@@ -548,7 +539,7 @@ async def bad_handler(ctx):
 @on(SUBJECT_PROPERTY_CHANGED)
 @when(lambda ctx: ctx.property_name != "counter")  # Guard
 async def good_handler(ctx):
-    ctx.subject.set("counter", lambda c: c + 1, muted=True)
+    await ctx.subject.set("counter", lambda c: c + 1, muted=True)
 ```
 
 ### ❌ Don't: Use if when @when is clearer
@@ -556,7 +547,7 @@ async def good_handler(ctx):
 ```python
 @on("user.action")
 async def bad_handler(ctx):
-    if ctx.subject.get("status") == "active":
+    if await ctx.subject.get("status") == "active":
         # Do something
         pass
 ```
@@ -565,7 +556,7 @@ async def bad_handler(ctx):
 
 ```python
 @on("user.action")
-@when(lambda ctx: ctx.subject.get("status") == "active")
+@when(lambda ctx: await ctx.subject.get("status") == "active")
 async def good_handler(ctx):
     # Do something
     pass

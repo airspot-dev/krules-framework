@@ -1,4 +1,12 @@
- # Migration Guide: KRules 1.x → 2.0
+ # Migration Guide
+
+This document covers two major migrations:
+- **KRules 1.x → 2.0** - Complete rewrite with decorator-based API
+- **KRules 2.0 → 3.0** - Async migration (see [MIGRATION_V3.md](MIGRATION_V3.md) for complete guide)
+
+---
+
+# Migration Guide: KRules 1.x → 2.0
 
 ## Overview
 
@@ -613,6 +621,153 @@ async def handle_order(ctx):
 2. Start converting high-value rules first
 3. Test thoroughly (behavior might differ in edge cases)
 4. Update your deployment/configuration
+5. Monitor for issues
+
+---
+
+# Migration Guide: KRules 2.0 → 3.0 (Async)
+
+## Overview
+
+KRules 3.0 is a **full async migration** with breaking changes to the Subject and storage APIs.
+
+**What changed:**
+- ✅ All Subject persistence methods are now async
+- ✅ All handlers must be `async def`
+- ✅ All storage backends are async
+- ✅ Filters can be async
+- ✅ Middleware is async-only
+
+**What's preserved:**
+- ✅ Subject property access (cache mode) remains sync
+- ✅ Event system architecture unchanged
+- ✅ Decorator-based API unchanged
+- ✅ Container and DI patterns unchanged
+
+**Complete migration guide:** See [MIGRATION_V3.md](MIGRATION_V3.md) for detailed instructions, code examples, and migration checklist.
+
+## Quick Summary of Breaking Changes
+
+### 1. Subject Methods → Async
+
+**Before (2.0 - sync):**
+```python
+user = container.subject("user-123")
+user.set("email", "john@example.com")
+email = user.get("email")
+user.delete("temp")
+user.store()
+```
+
+**After (3.0 - async):**
+```python
+user = container.subject("user-123")
+await user.set("email", "john@example.com")
+email = await user.get("email")
+await user.delete("temp")
+await user.store()
+```
+
+### 2. Handlers → Async Only
+
+**Before (2.0 - sync or async):**
+```python
+@on("user.login")
+def handle_login(ctx):  # Sync handler worked
+    ctx.subject.set("last_login", datetime.now())
+```
+
+**After (3.0 - async only):**
+```python
+@on("user.login")
+async def handle_login(ctx):  # Must be async
+    await ctx.subject.set("last_login", datetime.now())
+```
+
+### 3. Storage Interface → Async
+
+**Before (2.0 - sync):**
+```python
+class MyStorage(SubjectStorage):
+    def load(self):
+        return props, ext_props
+
+    def store(self, inserts, updates, deletes):
+        # Sync storage operations
+        pass
+```
+
+**After (3.0 - async):**
+```python
+class MyStorage(SubjectStorage):
+    async def load(self):
+        return props, ext_props
+
+    async def store(self, inserts, updates, deletes):
+        # Async storage operations
+        pass
+```
+
+### 4. Redis Storage → redis.asyncio
+
+**Before (2.0 - sync):**
+```python
+from redis import Redis
+from redis_subjects_storage import create_redis_storage
+
+redis_factory = create_redis_storage(
+    url="redis://localhost:6379",
+    key_prefix="app:"
+)
+```
+
+**After (3.0 - async):**
+```python
+from redis.asyncio import Redis
+from redis_subjects_storage import create_redis_client, create_redis_storage
+
+redis_client = await create_redis_client("redis://localhost:6379")
+redis_factory = create_redis_storage(
+    redis_client=redis_client,
+    redis_prefix="app:"
+)
+```
+
+## Migration Steps
+
+1. **Update all handlers to `async def`**
+   - Search for: `@on(` followed by `def `
+   - Replace with: `async def`
+
+2. **Add `await` to all Subject methods**
+   - `subject.set()` → `await subject.set()`
+   - `subject.get()` → `await subject.get()`
+   - `subject.delete()` → `await subject.delete()`
+   - `subject.store()` → `await subject.store()`
+   - `subject.flush()` → `await subject.flush()`
+   - `subject.set_ext()` → `await subject.set_ext()`
+   - `subject.get_ext()` → `await subject.get_ext()`
+
+3. **Update storage backend**
+   - Redis: Use `redis.asyncio`
+   - Custom storage: Implement async methods
+
+4. **Update tests**
+   - Add `@pytest.mark.asyncio` to all test functions
+   - Make test functions `async def`
+   - Add `await` to all Subject operations
+
+5. **Update integrations**
+   - Pub/Sub dispatcher: Already async
+   - FastAPI: Already async
+   - CloudEvents: Update to async dispatch
+
+## What Next?
+
+1. Read the complete migration guide: [MIGRATION_V3.md](MIGRATION_V3.md)
+2. Review the async/sync integration patterns: [ASYNC_IN_SYNC.md](ASYNC_IN_SYNC.md)
+3. Update your codebase following the migration checklist
+4. Test thoroughly
 5. Monitor for issues
 
 ## Support

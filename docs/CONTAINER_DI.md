@@ -104,11 +104,11 @@ on, when, middleware, emit = container.handlers()
 # 3. Define handlers
 @on("user.login")
 async def handle_login(ctx):
-    ctx.subject.set("last_login", datetime.now())
+    await ctx.subject.set("last_login", datetime.now())
 
 # 4. Create subjects
 user = container.subject("user-123")
-user.set("email", "john@example.com")
+await user.set("email", "john@example.com")
 
 # 5. Emit events
 await emit("user.login", user)
@@ -158,9 +158,11 @@ from redis_subjects_storage.storage_impl import create_redis_storage
 container = KRulesContainer()
 
 # Create Redis storage factory
+from redis.asyncio import Redis
+redis_client = await create_redis_client("redis://localhost:6379")
 redis_factory = create_redis_storage(
-    url="redis://localhost:6379",
-    key_prefix="myapp:"
+    redis_client=redis_client,
+    redis_prefix="myapp:"
 )
 
 # Override storage provider
@@ -168,8 +170,8 @@ container.subject_storage.override(providers.Object(redis_factory))
 
 # Now all subjects use Redis
 user = container.subject("user-123")
-user.set("email", "john@example.com")
-user.store()  # Persists to Redis
+await user.set("email", "john@example.com")
+await user.store()  # Persists to Redis
 ```
 
 ### Custom Storage Backend
@@ -219,12 +221,14 @@ Use multiple containers for isolation:
 ```python
 # Container for tenant A
 container_a = KRulesContainer()
-redis_a = create_redis_storage("redis://localhost:6379", "tenant_a:")
+redis_client_a = await create_redis_client("redis://localhost:6379")
+redis_a = create_redis_storage(redis_client_a, "tenant_a:")
 container_a.subject_storage.override(providers.Object(redis_a))
 
 # Container for tenant B
 container_b = KRulesContainer()
-redis_b = create_redis_storage("redis://localhost:6379", "tenant_b:")
+redis_client_b = await create_redis_client("redis://localhost:6379")
+redis_b = create_redis_storage(redis_client_b, "tenant_b:")
 container_b.subject_storage.override(providers.Object(redis_b))
 
 # Each container has isolated event bus and storage
@@ -307,13 +311,15 @@ async def test_handler(container):
 
 ```python
 @pytest.fixture
-def container_with_redis():
+async def container_with_redis():
     """Container with Redis storage"""
     container = KRulesContainer()
 
+    from redis.asyncio import Redis
+    redis_client = await create_redis_client("redis://localhost:6379")
     redis_factory = create_redis_storage(
-        url="redis://localhost:6379",
-        key_prefix="test:"
+        redis_client=redis_client,
+        redis_prefix="test:"
     )
     container.subject_storage.override(providers.Object(redis_factory))
 
@@ -322,12 +328,12 @@ def container_with_redis():
 @pytest.mark.asyncio
 async def test_with_redis(container_with_redis):
     user = container_with_redis.subject("user-123")
-    user.set("email", "test@example.com")
-    user.store()
+    await user.set("email", "test@example.com")
+    await user.store()
 
     # Verify persistence
     user2 = container_with_redis.subject("user-123")
-    assert user2.get("email") == "test@example.com"
+    assert await user2.get("email") == "test@example.com"
 ```
 
 ### Mock Dependencies
@@ -364,7 +370,7 @@ async def test_with_mock(container_with_mock):
 import os
 from krules_core.container import KRulesContainer
 
-def create_container():
+async def create_container():
     """Create container with environment-based config"""
     container = KRulesContainer()
 
@@ -375,13 +381,15 @@ def create_container():
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         redis_prefix = os.getenv("REDIS_KEY_PREFIX", "app:")
 
-        redis_factory = create_redis_storage(redis_url, redis_prefix)
+        from redis.asyncio import Redis
+        redis_client = await create_redis_client(redis_url)
+        redis_factory = create_redis_storage(redis_client, redis_prefix)
         container.subject_storage.override(providers.Object(redis_factory))
 
     return container
 
 # Use in application
-container = create_container()
+container = await create_container()
 ```
 
 ### Configuration Files
@@ -390,7 +398,7 @@ container = create_container()
 import yaml
 from krules_core.container import KRulesContainer
 
-def create_container_from_config(config_path):
+async def create_container_from_config(config_path):
     """Create container from YAML config"""
     with open(config_path) as f:
         config = yaml.safe_load(f)
@@ -400,9 +408,11 @@ def create_container_from_config(config_path):
     # Configure storage
     if config.get("storage", {}).get("type") == "redis":
         redis_config = config["storage"]["redis"]
+        from redis.asyncio import Redis
+        redis_client = await create_redis_client(redis_config["url"])
         redis_factory = create_redis_storage(
-            url=redis_config["url"],
-            key_prefix=redis_config.get("key_prefix", "")
+            redis_client=redis_client,
+            redis_prefix=redis_config.get("key_prefix", "")
         )
         container.subject_storage.override(providers.Object(redis_factory))
 
@@ -415,7 +425,7 @@ def create_container_from_config(config_path):
 #     url: redis://localhost:6379
 #     key_prefix: "myapp:"
 
-container = create_container_from_config("config.yaml")
+container = await create_container_from_config("config.yaml")
 ```
 
 ## Advanced Patterns
@@ -447,13 +457,15 @@ on, when, middleware, emit = container.handlers()
 ### Factory Pattern
 
 ```python
-def create_production_container():
+async def create_production_container():
     """Create container for production"""
     container = KRulesContainer()
 
+    from redis.asyncio import Redis
+    redis_client = await create_redis_client(os.getenv("REDIS_URL"))
     redis_factory = create_redis_storage(
-        url=os.getenv("REDIS_URL"),
-        key_prefix=os.getenv("KEY_PREFIX")
+        redis_client=redis_client,
+        redis_prefix=os.getenv("KEY_PREFIX")
     )
     container.subject_storage.override(providers.Object(redis_factory))
 
@@ -467,7 +479,7 @@ def create_test_container():
 
 # Use appropriate factory
 if os.getenv("ENV") == "production":
-    container = create_production_container()
+    container = await create_production_container()
 else:
     container = create_test_container()
 ```
