@@ -11,7 +11,7 @@ KRules is a Python framework for building reactive, event-driven applications wi
 - **Async Native** - Built on asyncio for high-performance concurrent event processing
 - **Type Safe** - Full type hints for excellent IDE support and type checking
 - **Dependency Injection** - Container-based architecture for testability and flexibility
-- **Storage Agnostic** - Pluggable backends (Redis, SQLite, in-memory, custom)
+- **Storage Agnostic** - Pluggable backends (Redis, PostgreSQL, in-memory, custom)
 - **Production Ready** - Middleware support, error isolation, monitoring hooks
 
 ## Installation
@@ -25,6 +25,9 @@ With optional features:
 ```bash
 # Redis storage backend
 pip install "krules-framework[redis]"
+
+# PostgreSQL storage backend
+pip install "krules-framework[postgres]"
 
 # Google Cloud Pub/Sub
 pip install "krules-framework[pubsub]"
@@ -83,7 +86,7 @@ device = container.subject("device:prod-01")
 device.set("cpu_usage", 75)      # → triggers handler, health="warning"
 device.set("memory_usage", 60)
 device.set("error_rate", 2)
-device.store()  # Single persistence, flushes cache to Redis
+device.store()  # Single persistence, flushes cache to storage
 
 # Single update mode: bypass cache, write directly
 await device.set("cpu_usage", 95, use_cache=False)  # → health="critical" → alert!
@@ -122,6 +125,12 @@ device.set("metadata", {"location": "room-1", "floor": 2})
 # Lambda values for atomic operations
 device.set("count", 0)
 device.set("count", lambda c: c + 1)  # Atomic increment
+
+# Pass extra context to handlers (audit trail, business context)
+await device.set("status", "maintenance", extra={
+    "reason": "scheduled_maintenance",
+    "operator_id": "admin-123"
+})
 
 # Get with defaults
 temp = device.get("temperature")
@@ -169,6 +178,14 @@ async def on_error_status(ctx):
     await ctx.emit("alert.device_error", {
         "device_id": ctx.subject.name
     })
+
+# Access extra context from set() operations
+@on(SUBJECT_PROPERTY_CHANGED)
+async def audit_property_change(ctx):
+    if ctx.extra:  # Extra context passed from set()/delete()
+        operator = ctx.extra.get("operator_id", "system")
+        reason = ctx.extra.get("reason", "unspecified")
+        print(f"{operator} changed {ctx.property_name}: {reason}")
 ```
 
 ### Filters - Conditional Execution
@@ -236,22 +253,56 @@ KRules supports pluggable storage backends for subject persistence.
 ```python
 from dependency_injector import providers
 from krules_core.container import KRulesContainer
+from redis.asyncio import Redis
 from redis_subjects_storage.storage_impl import create_redis_storage
 
 # Create container
 container = KRulesContainer()
 
+# Create Redis client
+redis_client = Redis.from_url("redis://localhost:6379")
+
 # Override storage with Redis
 redis_factory = create_redis_storage(
-    url="redis://localhost:6379",
-    key_prefix="myapp:"
+    redis_client=redis_client,
+    redis_prefix="myapp:"
 )
 container.subject_storage.override(providers.Object(redis_factory))
 
 # Now all subjects use Redis
 user = container.subject("user-123")
-user.set("name", "John")  # Persisted in Redis
-user.store()
+await user.set("name", "John")  # Persisted in Redis
+await user.store()
+```
+
+### PostgreSQL Storage
+
+```python
+from dependency_injector import providers
+from krules_core.container import KRulesContainer
+import asyncpg
+from postgres_subjects_storage.storage_impl import create_postgres_storage
+
+# Create container
+container = KRulesContainer()
+
+# Create PostgreSQL connection pool
+pg_pool = await asyncpg.create_pool(
+    database="krules",
+    user="postgres",
+    password="postgres",
+    host="localhost",
+    port=5432
+)
+
+# Override storage with PostgreSQL
+pg_factory = create_postgres_storage(pool=pg_pool)
+container.subject_storage.override(providers.Object(pg_factory))
+
+# Now all subjects use PostgreSQL (tables auto-created)
+user = container.subject("user-123")
+await user.set("name", "John")  # Persisted in PostgreSQL with JSONB
+await user.store()
 ```
 
 ### Custom Storage
@@ -336,7 +387,6 @@ async def test_user_login(container):
 - [Integrations](docs/INTEGRATIONS.md) - FastAPI, Pub/Sub, CloudEvents
 - [Testing](docs/TESTING.md) - Testing strategies
 - [Advanced Patterns](docs/ADVANCED_PATTERNS.md) - Production best practices
-- [Shell Mode](docs/SHELL_MODE.md) - Interactive REPL usage
 - [API Reference](docs/API_REFERENCE.md) - Complete API documentation
 
 ## Integrations

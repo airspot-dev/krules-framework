@@ -75,6 +75,10 @@ dev = [
 ]
 
 [dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "notebook>=7.4.7",
+]
 test = [
     "pytest>=7.0.0",
     "pytest-localserver>=0.9.0",
