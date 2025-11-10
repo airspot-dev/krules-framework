@@ -95,9 +95,9 @@ class TestEventTypeConstants:
             })
 
         subject = container.subject("device-123")
-        subject.set("temperature", 75)
-        subject.set("temperature", 85)
-        subject.set("status", "ok")
+        await subject.set("temperature", 75)
+        await subject.set("temperature", 85)
+        await subject.set("status", "ok")
 
         # Give async events time to process
         import asyncio
@@ -135,16 +135,16 @@ class TestEventTypeConstants:
             })
 
         subject = container.subject("user-456")
-        subject.set("email", "user@example.com")
-        subject.set("temp_token", "abc123")
+        await subject.set("email", "user@example.com")
+        await subject.set("temp_token", "abc123")
 
         # Give time for property-changed events to process
         import asyncio
         await asyncio.sleep(0.01)
 
         # Now delete properties
-        subject.delete("temp_token")
-        subject.delete("email")
+        await subject.delete("temp_token")
+        await subject.delete("email")
 
         # Give time for deletion events to process
         await asyncio.sleep(0.01)
@@ -178,7 +178,7 @@ class TestEventTypeConstants:
             using_string.append(ctx.event_type)
 
         subject = container.subject("test")
-        subject.set("value", 42)
+        await subject.set("value", 42)
 
         import asyncio
         await asyncio.sleep(0.01)

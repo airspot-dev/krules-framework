@@ -106,9 +106,9 @@ class CloudEventsDispatcher(BaseDispatcher):
         """Get the default dispatch policy"""
         return self._default_dispatch_policy
 
-    def dispatch(self, event_type, subject, payload, **extra):
+    async def dispatch(self, event_type, subject, payload, **extra):
         """
-        Dispatch an event to Google Cloud PubSub.
+        Dispatch an event to Google Cloud PubSub (async).
 
         Converts the event to CloudEvents format and publishes to the specified topic.
         The topic can be specified via constructor, 'topic' kwarg, or middleware metadata.
@@ -129,7 +129,7 @@ class CloudEventsDispatcher(BaseDispatcher):
                 await ctx.emit("order.confirmed", ctx.subject, {...}, topic="orders")
 
             # Direct dispatch
-            dispatcher.dispatch("order.confirmed", subject, {...}, topic="orders")
+            await dispatcher.dispatch("order.confirmed", subject, {...}, topic="orders")
         """
         #import logfire
         #with logfire.span("PubSub Dispatcher", event=event_type, subject=subject, payload=payload, extra=extra):
@@ -153,7 +153,7 @@ class CloudEventsDispatcher(BaseDispatcher):
             topic_path = self._publisher.topic_path(self._project_id, _topic_id)
 
         _id = str(uuid.uuid4())
-        ext_props = subject.get_ext_props()
+        ext_props = await subject.get_ext_props()
         property_name = payload.get(PayloadConst.PROPERTY_NAME, None)
         if property_name is not None:
             ext_props.update({"propertyname": property_name})

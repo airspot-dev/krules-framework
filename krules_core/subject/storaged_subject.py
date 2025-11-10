@@ -1,47 +1,28 @@
 import inspect
 import asyncio
 
-import wrapt
-
 from krules_core.subject import SubjectProperty, SubjectExtProperty, PayloadConst, PropertyType
 
 
-class AwaitableResult:
+class Subject:
     """
-    Wrapper that allows optional await on subject operations.
+    Async Subject implementation for KRules.
 
-    This enables transparent usage in both sync and async contexts:
-    - Sync: result = subject.set("prop", value)
-    - Async: result = await subject.set("prop", value)
+    Provides async API for subject property management with transparent caching.
+    All methods automatically load cache when needed.
 
-    When awaited, ensures all event handlers complete before returning.
-    """
-    def __init__(self, result, coro=None):
-        self._result = result
-        self._coro = coro
+    Example:
+        # Use KRulesContainer (recommended)
+        from krules_core.container import KRulesContainer
+        container = KRulesContainer()
 
-    def __await__(self):
-        """Allow: await subject.set(...)"""
-        if self._coro:
-            return self._coro.__await__()
-        # No coroutine, return result immediately
-        async def noop():
-            return self._result
-        return noop().__await__()
-
-    def __iter__(self):
-        """Allow: new_val, old_val = subject.set(...)"""
-        return iter(self._result)
-
-
-class Subject(object):
-
-    """
-    Subject implementation
-    Needs a storage strategy implementation
+        user = container.subject("user-123")
+        await user.set("name", "John")
+        name = await user.get("name")
+        await user.store()
     """
 
-    def __init__(self, name, storage, event_bus, event_info=None, event_data=None, use_cache_default=True):
+    def __init__(self, name, storage, event_bus, event_info=None, event_data=None):
         """
         Initialize a Subject.
 
@@ -51,22 +32,9 @@ class Subject(object):
             event_bus: EventBus instance (REQUIRED - use KRulesContainer.subject())
             event_info: Event information dictionary
             event_data: Event data
-            use_cache_default: Whether to use caching by default
 
-        Example:
-            # Use KRulesContainer (recommended)
-            from krules_core.container import KRulesContainer
-            container = KRulesContainer()
-            subject = container.subject("user-123")
-
-            # Direct instantiation (advanced use only)
-            from krules_core.subject.storaged_subject import Subject
-            from krules_core.subject.empty_storage import EmptySubjectStorage
-            from krules_core.event_bus import EventBus
-
-            storage = EmptySubjectStorage
-            event_bus = EventBus()
-            subject = Subject("user-123", storage=storage, event_bus=event_bus)
+        Note:
+            Direct instantiation is not recommended. Use KRulesContainer.subject() instead.
         """
         if storage is None:
             raise ValueError(
@@ -81,7 +49,6 @@ class Subject(object):
             )
 
         self.name = name
-        self._use_cache = use_cache_default
         self._storage = storage(name, event_info=event_info or {}, event_data=event_data)
         self._event_info = event_info or {}
         self._cached = None
@@ -93,47 +60,110 @@ class Subject(object):
     def __repr__(self):
         return f"Subject<{self.name}>"
 
-    def _load(self):
+    async def _load(self):
+        """
+        Load properties from storage into cache.
 
-        props, ext_props = self._storage.load()
-        #if self._cached is None:
-        self._cached = \
-            {
-                PropertyType.DEFAULT: {
-                    "values": {},
-                    "created": set(),
-                    "updated": set(),
-                    "deleted": set(),
-                },
-                PropertyType.EXTENDED: {
-                    "values": {},
-                    "created": set(),
-                    "updated": set(),
-                    "deleted": set(),
-                }
+        Automatically called by get/set/has/keys when cache is None.
+        """
+        props, ext_props = await self._storage.load()
+        self._cached = {
+            PropertyType.DEFAULT: {
+                "values": {},
+                "created": set(),
+                "updated": set(),
+                "deleted": set(),
+            },
+            PropertyType.EXTENDED: {
+                "values": {},
+                "created": set(),
+                "updated": set(),
+                "deleted": set(),
             }
+        }
         self._cached[PropertyType.DEFAULT]["values"] = props
         self._cached[PropertyType.EXTENDED]["values"] = ext_props
 
-    def _set(self, prop, value, extended, muted, use_cache):
-        if isinstance(value, tuple):
-            value = list(value)
+    async def get(self, prop, default=None):
+        """
+        Get a property value.
 
-        if use_cache is None:
-            use_cache = self._use_cache
-        if use_cache:
-            if self._cached is None:
-                self._load()
-            kprops = extended and PropertyType.EXTENDED or PropertyType.DEFAULT
-            vals = extended and self._cached[kprops]["values"] or self._cached[kprops]["values"]
-            if prop in vals:
-                self._cached[kprops]["updated"].add(prop)
-            else:
-                self._cached[kprops]["created"].add(prop)
-            try:
-                old_value = vals[prop]
-            except KeyError:
-                old_value = None
+        Args:
+            prop: Property name
+            default: Default value if property doesn't exist
+
+        Returns:
+            Property value or default
+
+        Example:
+            name = await user.get("name")
+            age = await user.get("age", default=0)
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        try:
+            return self._cached[PropertyType.DEFAULT]["values"][prop]
+        except KeyError:
+            if default is not None:
+                return default
+            raise AttributeError(f"Property '{prop}' not found")
+
+    async def get_ext(self, prop, default=None):
+        """
+        Get an extended property value.
+
+        Args:
+            prop: Property name
+            default: Default value if property doesn't exist
+
+        Returns:
+            Property value or default
+
+        Example:
+            tenant = await user.get_ext("tenant_id")
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        try:
+            return self._cached[PropertyType.EXTENDED]["values"][prop]
+        except KeyError:
+            if default is not None:
+                return default
+            raise AttributeError(f"Extended property '{prop}' not found")
+
+    async def set(self, prop, value, muted=False, extra=None):
+        """
+        Set a property value.
+
+        Args:
+            prop: Property name
+            value: Property value (can be callable for atomic operations)
+            muted: If True, don't emit property-changed event
+            extra: Optional dict with extra context passed to event handlers
+
+        Returns:
+            Tuple (new_value, old_value)
+
+        Example:
+            await user.set("name", "John")
+            await user.set("counter", lambda c: c + 1)  # Atomic increment
+            await user.set("status", "active", extra={"reason": "login"})
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        # Get old value
+        vals = self._cached[PropertyType.DEFAULT]["values"]
+        old_value = vals.get(prop)
+
+        # Handle callable values
+        if callable(value):
+            # For callable, evaluate function with old value
             if inspect.isfunction(value):
                 n_params = len(inspect.signature(value).parameters)
                 if n_params == 0:
@@ -141,389 +171,335 @@ class Subject(object):
                 elif n_params == 1:
                     value = value(old_value)
                 else:
-                    raise ValueError("to many arguments for {}".format(prop))
+                    raise ValueError(f"Callable for property '{prop}' must take 0 or 1 arguments")
 
-            vals[prop] = value
+        # Track changes for store()
+        if prop in vals:
+            self._cached[PropertyType.DEFAULT]["updated"].add(prop)
         else:
-            klass, k = extended and (SubjectExtProperty, PropertyType.EXTENDED) or (SubjectProperty, PropertyType.DEFAULT)
-            value, old_value = self._storage.set(klass(prop, value))
-            # update cached
-            if self._cached:
-                self._cached[k]["values"][prop] = value
-                if prop in self._cached[k]["created"]:
-                    self._cached[k]["created"].remove(prop)
-                if prop in self._cached[k]["updated"]:
-                    self._cached[k]["updated"].remove(prop)
-                if prop in self._cached[k]["deleted"]:
-                    self._cached[k]["deleted"].remove(prop)
+            self._cached[PropertyType.DEFAULT]["created"].add(prop)
 
-        result = (value, old_value)
+        # Set new value in cache
+        vals[prop] = value
 
+        # Emit property-changed event if not muted
         if not muted and value != old_value:
-            payload = {PayloadConst.PROPERTY_NAME: prop, PayloadConst.OLD_VALUE: old_value,
-                       PayloadConst.VALUE: value}
+            payload = {
+                PayloadConst.PROPERTY_NAME: prop,
+                PayloadConst.OLD_VALUE: old_value,
+                PayloadConst.VALUE: value
+            }
+            await self._event_bus.emit("subject-property-changed", self, payload, extra=extra)
 
-            # Emit property change event using injected event bus
-            event_type = "subject-property-changed"
+        return (value, old_value)
 
-            # Try to emit async, fallback to sync if needed
-            try:
-                loop = asyncio.get_running_loop()
-                # Already in async context - schedule task and return awaitable
-                # This ensures the event is emitted even without await,
-                # but allows caller to optionally: await subject.set(...)
-                task = asyncio.create_task(self._event_bus.emit(event_type, self, payload))
-                return AwaitableResult(result, task)
-            except RuntimeError:
-                # No running loop - emit synchronously
-                try:
-                    loop = asyncio.get_event_loop()
-                    loop.run_until_complete(self._event_bus.emit(event_type, self, payload))
-                except RuntimeError:
-                    # No loop at all - create one
-                    asyncio.run(self._event_bus.emit(event_type, self, payload))
-
-        # Always return AwaitableResult for consistent API
-        return AwaitableResult(result)
-
-    def set(self, prop, value, muted=False, use_cache=None):
-        return self._set(prop, value, False, muted, use_cache)
-
-    def set_ext(self, prop, value, use_cache=None):
-        return self._set(prop, value, True, True, use_cache)
-
-    def _get(self, prop, extended, use_cache):
-        if use_cache is None:
-            use_cache = self._use_cache
-        if use_cache:
-            if self._cached is None:
-                self._load()
-            if extended:
-                vals = self._cached[PropertyType.EXTENDED]["values"]
-            else:
-                vals = self._cached[PropertyType.DEFAULT]["values"]
-            if prop not in vals:
-                raise AttributeError(prop)
-            return vals[prop]
-        else:
-            klass, k = extended and (SubjectExtProperty, PropertyType.EXTENDED) or (SubjectProperty, PropertyType.DEFAULT)
-            val = self._storage.get(klass(prop))
-            # update cache if present
-            if self._cached is not None:
-                self._cached[k]["values"][prop] = val
-                # remove prop from inserts and ensure it is in updates (ignore deletes)
-                if prop in self._cached[k]["created"]:
-                    self._cached[k]["created"].remove(prop)
-                self._cached[k]["updated"].add(prop)
-            return val
-
-    def get(self, prop, use_cache=None, **kwargs):
+    async def set_ext(self, prop, value):
         """
-        kwargs:
-            default: value returned if the subject does not contain the property.
-            If default is not set and the property is not present in the subject an AttributeError will be raised
+        Set an extended property value.
+
+        Args:
+            prop: Property name
+            value: Property value
+
+        Returns:
+            Tuple (new_value, old_value)
+
+        Example:
+            await user.set_ext("tenant_id", "t123")
         """
-        try:
-            return self._get(prop, False, use_cache)
-        except AttributeError as ex:
-            if "default" in kwargs:
-                return kwargs["default"]
-            raise ex
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
 
-    def get_ext(self, prop, use_cache=None):
-        return self._get(prop, True, use_cache)
+        # Get old value
+        vals = self._cached[PropertyType.EXTENDED]["values"]
+        old_value = vals.get(prop)
 
-    def _delete(self, prop, extended, muted, use_cache):
-        if use_cache is None:
-            use_cache = self._use_cache
-
-        old_value = None
-
-        if use_cache:
-            if self._cached is None:
-                self._load()
-            k = extended and PropertyType.EXTENDED or PropertyType.DEFAULT
-            vals = self._cached[k]["values"]
-            if prop not in vals:
-                raise AttributeError(prop)
-            # Capture old value before deletion
-            old_value = vals[prop]
-            del vals[prop]
-            for _set in ("created", "updated"):
-                if prop in self._cached[k][_set]:
-                    self._cached[k][_set].remove(prop)
-            self._cached[k]["deleted"].add(prop)
+        # Track changes for store()
+        if prop in vals:
+            self._cached[PropertyType.EXTENDED]["updated"].add(prop)
         else:
-            klass, k = extended and (SubjectExtProperty, PropertyType.EXTENDED) or (SubjectProperty, PropertyType.DEFAULT)
-            # Capture old value before deletion
-            try:
-                old_value = self._storage.get(klass(prop))
-            except AttributeError:
-                # Property doesn't exist, will be raised by delete()
-                pass
-            self._storage.delete(klass(prop))
-            if self._cached is not None:
-                if prop in self._cached[k]["values"]:
-                    del self._cached[k]["values"][prop]
-                for _set in ["created", "updated", "deleted"]:
-                    if prop in self._cached[k][_set]:
-                        self._cached[k][_set].remove(prop)
+            self._cached[PropertyType.EXTENDED]["created"].add(prop)
 
+        # Set new value in cache
+        vals[prop] = value
+
+        return (value, old_value)
+
+    async def delete(self, prop, muted=False, extra=None):
+        """
+        Delete a property.
+
+        Args:
+            prop: Property name
+            muted: If True, don't emit property-deleted event
+            extra: Optional dict with extra context passed to event handlers
+
+        Example:
+            await user.delete("temp_field")
+            await user.delete("cache", extra={"reason": "expired"})
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        vals = self._cached[PropertyType.DEFAULT]["values"]
+
+        if prop not in vals:
+            raise AttributeError(f"Property '{prop}' not found")
+
+        # Capture old value before deletion
+        old_value = vals[prop]
+
+        # Delete from cache
+        del vals[prop]
+
+        # Track deletion for store()
+        if prop in self._cached[PropertyType.DEFAULT]["created"]:
+            self._cached[PropertyType.DEFAULT]["created"].remove(prop)
+        if prop in self._cached[PropertyType.DEFAULT]["updated"]:
+            self._cached[PropertyType.DEFAULT]["updated"].remove(prop)
+        self._cached[PropertyType.DEFAULT]["deleted"].add(prop)
+
+        # Emit property-deleted event if not muted
         if not muted:
             payload = {
                 PayloadConst.PROPERTY_NAME: prop,
                 PayloadConst.OLD_VALUE: old_value
             }
+            await self._event_bus.emit("subject-property-deleted", self, payload, extra=extra)
 
-            # Emit property deleted event using injected event bus
-            event_type = "subject-property-deleted"
-
-            try:
-                loop = asyncio.get_running_loop()
-                # Schedule task and return awaitable for consistency
-                task = asyncio.create_task(self._event_bus.emit(event_type, self, payload))
-                return AwaitableResult(None, task)
-            except RuntimeError:
-                try:
-                    loop = asyncio.get_event_loop()
-                    loop.run_until_complete(self._event_bus.emit(event_type, self, payload))
-                except RuntimeError:
-                    asyncio.run(self._event_bus.emit(event_type, self, payload))
-
-        # Always return AwaitableResult for consistent API
-        return AwaitableResult(None)
-
-    def delete(self, prop, muted=False, use_cache=None):
-        return self._delete(prop, False, muted, use_cache)
-
-    def delete_ext(self, prop, use_cache=None):
-        return self._delete(prop, True, False, use_cache)
-
-
-    def get_ext_props(self):
-        # If we have a cache we use it, otherwise we don't load any cache
-        # and we get them from the storage.
-        # This is because we need all the extended properties primarily when we route events to a subject
-        # and we don't care about normal properties
-        if self._cached:
-            return self._cached[PropertyType.EXTENDED]["values"].copy()
-        return self._storage.get_ext_props()
-
-    def event_info(self):
-        return self._event_info.copy()
-
-    def flush(self):
+    async def delete_ext(self, prop):
         """
-        Flush (delete) the subject from storage.
+        Delete an extended property.
 
-        This method:
-        1. Emits subject-property-deleted event for each property
-        2. Deletes the subject from storage
-        3. Emits subject-deleted event with final snapshot
-        4. Resets the cache
+        Args:
+            prop: Property name
+
+        Example:
+            await user.delete_ext("tenant_id")
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        vals = self._cached[PropertyType.EXTENDED]["values"]
+
+        if prop not in vals:
+            raise AttributeError(f"Extended property '{prop}' not found")
+
+        # Delete from cache
+        del vals[prop]
+
+        # Track deletion for store()
+        if prop in self._cached[PropertyType.EXTENDED]["created"]:
+            self._cached[PropertyType.EXTENDED]["created"].remove(prop)
+        if prop in self._cached[PropertyType.EXTENDED]["updated"]:
+            self._cached[PropertyType.EXTENDED]["updated"].remove(prop)
+        self._cached[PropertyType.EXTENDED]["deleted"].add(prop)
+
+    async def has(self, prop):
+        """
+        Check if a property exists.
+
+        Args:
+            prop: Property name
 
         Returns:
-            AwaitableResult(self) - can be awaited to ensure events complete
+            bool: True if property exists
+
+        Example:
+            if await user.has("name"):
+                name = await user.get("name")
         """
-        # Collect snapshot before deletion
-        props = {
-            "ext_props": self.get_ext_props(),
-            "props": {},
-        }
-        for k in self:
-            props["props"][k] = self.get(k)
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
 
-        async def _emit_deletion_events():
-            """Emit property-deleted events for all properties, then subject-deleted"""
-            from krules_core.subject import PayloadConst
+        return prop in self._cached[PropertyType.DEFAULT]["values"]
 
-            # Emit subject-property-deleted for each default property
-            for prop_name, prop_value in props["props"].items():
-                payload = {
-                    PayloadConst.PROPERTY_NAME: prop_name,
-                    PayloadConst.OLD_VALUE: prop_value
-                }
-                await self._event_bus.emit("subject-property-deleted", self, payload)
+    async def has_ext(self, prop):
+        """
+        Check if an extended property exists.
 
-            # Emit subject-property-deleted for each extended property
-            for prop_name, prop_value in props["ext_props"].items():
-                payload = {
-                    PayloadConst.PROPERTY_NAME: prop_name,
-                    PayloadConst.OLD_VALUE: prop_value
-                }
-                await self._event_bus.emit("subject-property-deleted", self, payload)
+        Args:
+            prop: Property name
 
-            # Finally emit subject-deleted with snapshot
-            await self._event_bus.emit("subject-deleted", self, props)
+        Returns:
+            bool: True if extended property exists
 
-            # Return self for AwaitableResult
-            return self
+        Example:
+            if await user.has_ext("tenant_id"):
+                tenant = await user.get_ext("tenant_id")
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
 
-        # Delete from storage
-        self._storage.flush()
+        return prop in self._cached[PropertyType.EXTENDED]["values"]
 
-        # Reset cache after deletion
-        self._cached = None
+    async def keys(self):
+        """
+        Get list of all property names.
 
-        # Emit events
-        try:
-            loop = asyncio.get_running_loop()
-            # Schedule task and return awaitable for consistency
-            task = asyncio.create_task(_emit_deletion_events())
-            return AwaitableResult(self, task)
-        except RuntimeError:
-            try:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(_emit_deletion_events())
-            except RuntimeError:
-                asyncio.run(_emit_deletion_events())
+        Returns:
+            list: Property names
 
-        # Always return AwaitableResult for consistent API
-        return AwaitableResult(self)
+        Example:
+            keys = await user.keys()
+            for key in keys:
+                value = await user.get(key)
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
 
-    def store(self):
+        return list(self._cached[PropertyType.DEFAULT]["values"].keys())
 
+    async def get_ext_props(self):
+        """
+        Get all extended properties as dict.
+
+        Returns:
+            dict: Extended properties
+
+        Example:
+            ext_props = await user.get_ext_props()
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        return self._cached[PropertyType.EXTENDED]["values"].copy()
+
+    def event_info(self):
+        """Get event information dict (sync - no storage access)."""
+        return self._event_info.copy()
+
+    async def store(self):
+        """
+        Persist cached changes to storage.
+
+        Collects all created/updated/deleted properties and persists them.
+
+        Example:
+            await user.set("name", "John")
+            await user.set("age", 30)
+            await user.store()  # Batch persist both changes
+        """
         if not self._cached:
             return
 
         inserts, updates, deletes = [], [], []
-        for _set, k1 in ((inserts, "created"), (updates, "updated"), (deletes, "deleted")):
-            for k2, klass in ((PropertyType.DEFAULT, SubjectProperty), (PropertyType.EXTENDED, SubjectExtProperty)):
-                for prop in self._cached[k2][k1]:
-                    try:
-                        _set.append(klass(prop, self._cached[k2]["values"][prop]))
-                    except KeyError as ex:
-                        if _set is deletes:
-                            _set.append(klass(prop))
-                        else:
-                            raise ex
 
-        self._storage.store(inserts=inserts, updates=updates, deletes=deletes)
+        # Collect inserts
+        for prop in self._cached[PropertyType.DEFAULT]["created"]:
+            value = self._cached[PropertyType.DEFAULT]["values"][prop]
+            inserts.append(SubjectProperty(prop, value))
+        for prop in self._cached[PropertyType.EXTENDED]["created"]:
+            value = self._cached[PropertyType.EXTENDED]["values"][prop]
+            inserts.append(SubjectExtProperty(prop, value))
+
+        # Collect updates
+        for prop in self._cached[PropertyType.DEFAULT]["updated"]:
+            value = self._cached[PropertyType.DEFAULT]["values"][prop]
+            updates.append(SubjectProperty(prop, value))
+        for prop in self._cached[PropertyType.EXTENDED]["updated"]:
+            value = self._cached[PropertyType.EXTENDED]["values"][prop]
+            updates.append(SubjectExtProperty(prop, value))
+
+        # Collect deletes
+        for prop in self._cached[PropertyType.DEFAULT]["deleted"]:
+            deletes.append(SubjectProperty(prop))
+        for prop in self._cached[PropertyType.EXTENDED]["deleted"]:
+            deletes.append(SubjectExtProperty(prop))
+
+        # Persist to storage
+        await self._storage.store(inserts=inserts, updates=updates, deletes=deletes)
+
+        # Clear cache after successful persist
         self._cached = None
 
-    def dict(self):
+    async def flush(self):
+        """
+        Delete entire subject from storage.
 
-        if self._cached is None or not self._use_cache:
-            self._load()
+        Emits property-deleted events for all properties, then subject-deleted event.
 
-        obj = {
-            "name": self.name,
-            "ext": {}
+        Returns:
+            self (for chaining)
+
+        Example:
+            await user.flush()
+        """
+        # Collect snapshot before deletion
+        props = {}
+        ext_props = {}
+
+        if self._cached:
+            props = self._cached[PropertyType.DEFAULT]["values"].copy()
+            ext_props = self._cached[PropertyType.EXTENDED]["values"].copy()
+        else:
+            # Load to get current state
+            await self._load()
+            props = self._cached[PropertyType.DEFAULT]["values"].copy()
+            ext_props = self._cached[PropertyType.EXTENDED]["values"].copy()
+
+        # Emit subject-property-deleted for each default property
+        for prop_name, prop_value in props.items():
+            payload = {
+                PayloadConst.PROPERTY_NAME: prop_name,
+                PayloadConst.OLD_VALUE: prop_value
+            }
+            await self._event_bus.emit("subject-property-deleted", self, payload)
+
+        # Emit subject-property-deleted for each extended property
+        for prop_name, prop_value in ext_props.items():
+            payload = {
+                PayloadConst.PROPERTY_NAME: prop_name,
+                PayloadConst.OLD_VALUE: prop_value
+            }
+            await self._event_bus.emit("subject-property-deleted", self, payload)
+
+        # Delete from storage
+        await self._storage.flush()
+
+        # Clear cache
+        self._cached = None
+
+        # Emit subject-deleted event with snapshot
+        snapshot = {
+            "props": props,
+            "ext_props": ext_props,
         }
+        await self._event_bus.emit("subject-deleted", self, snapshot)
 
+        return self
+
+    async def dict(self):
+        """
+        Get dict representation of subject.
+
+        Returns:
+            dict: Subject properties as dict
+
+        Example:
+            data = await user.dict()
+            # {"name": "user-123", "email": "...", "ext": {"tenant_id": "..."}}
+        """
+        # Auto-load cache if needed
+        if self._cached is None:
+            await self._load()
+
+        obj = {"name": self.name}
+
+        # Add default properties
         for prop, value in self._cached[PropertyType.DEFAULT]["values"].items():
             obj[prop] = value
 
+        # Add extended properties under "ext" key
+        obj["ext"] = {}
         for prop, value in self._cached[PropertyType.EXTENDED]["values"].items():
             obj["ext"][prop] = value
 
         return obj
-
-    def __len__(self):
-
-        if self._cached is None or not self._use_cache:
-            self._load()
-        return len(self._cached[PropertyType.DEFAULT]["values"])
-
-    def __iter__(self):
-        if self._cached is None or not self._use_cache:
-            self._load()
-        return iter(self._cached[PropertyType.DEFAULT]["values"])
-
-    def __contains__(self, item):
-        if self._cached is None or not self._use_cache:
-            self._load()
-        return item in self._cached[PropertyType.DEFAULT]["values"]
-
-    def __getattribute__(self, item):
-        try:
-            return super().__getattribute__(item)
-        except AttributeError as ex:
-            propname = item
-            is_ext = False
-            is_mute = False
-            try:
-                if item.startswith("m_"):
-                    propname = item[2:]
-                    is_mute = True
-                elif item.startswith("ext_"):
-                    propname = item[4:]
-                    is_ext = True
-
-                value = self._get(propname, extended=is_ext, use_cache=self._use_cache)
-            except KeyError:
-                raise ex
-            return _SubjectPropertyProxy(self, propname, value, is_ext, is_mute, self._use_cache)
-
-    def __setattr__(self, item, value):
-
-        if item in ('name',) or item.startswith("_"):
-            return super().__setattr__(item, value)
-
-        is_mute = False
-        propname = item
-        is_ext = False
-        if item.startswith("m_"):
-            is_mute = True
-            propname = item[2:]
-        elif item.startswith("ext_"):
-            is_mute = True
-            is_ext = True
-            propname = item[4:]
-        return self._set(propname, value, is_ext, is_mute, self._use_cache)
-
-    def __delattr__(self, item):
-        if item in ('name',) or item.startswith("_"):
-            raise Exception("cannot remove {}".format(item))
-
-        is_mute = False
-        propname = item
-        is_ext = False
-        if item.startswith("m_"):
-            is_mute = True
-            propname = item[2:]
-        elif item.startswith("ext_"):
-            is_mute = True
-            is_ext = True
-            propname = item[4:]
-        return self._delete(propname, is_ext, is_mute, self._use_cache)
-
-
-class _SubjectPropertyProxy(wrapt.ObjectProxy):
-        """
-        This class wraps subject properties and it is ment primarily
-        to use in interactive mode.
-        I also provides convenience methods to dial with counters (incr/decr)
-        All operations are not cached and immediately effective
-        """
-
-        _subject = None
-        _prop = None
-        _extended = None
-        _muted = None
-        _use_cache = None
-
-        def __init__(self, subject, prop, value, extended, muted, use_cache):
-            super().__init__(value)
-            self._subject = subject
-            self._prop = prop
-            self._extended = extended
-            self._muted = muted
-            self._use_cache = use_cache
-
-        def __repr__(self):
-            return self.__class__.__repr__(self.__wrapped__)
-
-        def incr(self, amount=1):
-            if self._extended:
-                raise TypeError("not supported for extended properties")
-            return self._subject.set(self._prop, lambda v: v+amount, self._muted, self._use_cache)
-
-        def decr(self, amount=1):
-            if self._extended:
-                raise TypeError("not supported for extended properties")
-            return self._subject.set(self._prop, lambda v: v-amount, self._muted, self._use_cache)
-
-
-
-

@@ -171,7 +171,7 @@ class TestPublisherSubscriberIntegration:
             amount = ctx.payload["amount"]
 
             # Simulate payment processing
-            ctx.subject.set("payment_status", "processing")
+            await ctx.subject.set("payment_status", "processing")
 
             processed_orders.append({
                 "order_id": order_id,
@@ -188,7 +188,7 @@ class TestPublisherSubscriberIntegration:
         async def create_order(ctx: EventContext):
             """Order service creates order and publishes confirmation."""
             # Validate order
-            ctx.subject.set("status", "validated")
+            await ctx.subject.set("status", "validated")
 
             # Publish confirmation to payment service
             await ctx.emit(
@@ -269,7 +269,7 @@ class TestPublisherSubscriberIntegration:
 
         # Publisher emits event for specific subject
         subject = publisher_container.subject("device-sensor-42")
-        subject.set("local_prop", "not_transmitted")  # Local only
+        await subject.set("local_prop", "not_transmitted")  # Local only
 
         await pub_emit(
             "test.event",

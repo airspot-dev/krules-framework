@@ -35,6 +35,7 @@ class EventContext:
         event_type: Type of the event (e.g., "user.login")
         subject: Subject instance
         payload: Event payload dictionary
+        extra: Extra context passed from set()/delete() operations
         property_name: Property name (for property change events)
         old_value: Previous value (for property change events)
         new_value: New value (for property change events)
@@ -44,6 +45,7 @@ class EventContext:
     subject: str | Subject
     payload: dict
     _event_bus: 'EventBus'
+    extra: Optional[dict] = None
     property_name: Optional[str] = None
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
@@ -132,11 +134,13 @@ class Handler:
         return True
 
     async def execute(self, ctx: EventContext):
-        """Execute the handler function"""
-        if self.is_async:
-            await self.func(ctx)
-        else:
-            self.func(ctx)
+        """Execute the handler function (must be async)"""
+        if not self.is_async:
+            raise TypeError(
+                f"Handler '{self.name}' must be async. "
+                f"Change 'def {self.name}(ctx)' to 'async def {self.name}(ctx)'"
+            )
+        await self.func(ctx)
 
 
 class EventBus:
@@ -214,7 +218,7 @@ class EventBus:
         """
         self._middleware.append(middleware)
 
-    async def emit(self, event_type: str, subject: Any, payload: dict, **extra):
+    async def emit(self, event_type: str, subject: Any, payload: dict, extra: Optional[dict] = None, **kwargs):
         """
         Emit an event and execute all matching handlers.
 
@@ -222,21 +226,24 @@ class EventBus:
             event_type: Type of event
             subject: Subject instance
             payload: Event payload
-            **extra: Extra kwargs stored in context metadata (e.g., topic, dataschema, etc.)
+            extra: Extra context dict (available as ctx.extra in handlers)
+            **kwargs: Extra kwargs stored in context metadata (e.g., topic, dataschema, etc.)
 
         Example:
             await event_bus.emit("user.login", user, {"ip": "1.2.3.4"})
+            await event_bus.emit("alert.critical", device, {}, extra={"reason": "high_temp"})
             await event_bus.emit("alert.critical", device, {}, topic="alerts")
         """
         ctx = EventContext(
             event_type=event_type,
             subject=subject,
             payload=payload,
+            extra=extra,
             _event_bus=self  # Pass self for container-aware ctx.emit()
         )
 
         # Store extra kwargs in context metadata for middleware access
-        for key, value in extra.items():
+        for key, value in kwargs.items():
             ctx.set_metadata(key, value)
 
         logger.debug(f"Emitting event {event_type} on subject {subject}")

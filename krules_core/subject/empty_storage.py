@@ -1,36 +1,45 @@
 class EmptySubjectStorage:
+    """
+    Empty (no-op) async storage for KRules subjects.
+
+    Provides the storage interface but doesn't persist data.
+    All storage methods are async for interface consistency.
+    """
 
     def is_concurrency_safe(self):
-
+        """Storage concurrency safety (sync - metadata only)"""
         return False
 
     def is_persistent(self):
-
+        """Storage persistence (sync - metadata only)"""
         return False
 
-    def load(self):
+    async def load(self):
+        """Load properties (async)"""
         return {}, {}
 
-    def store(self, inserts=[], updates=[], deletes=[]):
+    async def store(self, inserts=[], updates=[], deletes=[]):
+        """Store properties (async)"""
         pass
 
-    def set(self, prop, old_value_default=None):
-
+    async def set(self, prop, old_value_default=None):
+        """Set single property (async)"""
         return None, None
 
-    def get(self, prop):
-
+    async def get(self, prop):
+        """Get single property (async)"""
         return None
 
-    def delete(self, prop):
+    async def delete(self, prop):
+        """Delete single property (async)"""
         pass
 
-    def get_ext_props(self):
-
+    async def get_ext_props(self):
+        """Get extended properties (async)"""
         return {}
 
-    def flush(self):
-
+    async def flush(self):
+        """Flush subject (async)"""
         return self
 
 

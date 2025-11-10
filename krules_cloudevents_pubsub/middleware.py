@@ -148,7 +148,7 @@ def create_dispatcher_middleware(dispatcher):
                 f"(policy: {dispatch_policy})"
             )
 
-            dispatcher.dispatch(
+            await dispatcher.dispatch(
                 event_type=ctx.event_type,
                 subject=ctx.subject,
                 payload=ctx.payload,

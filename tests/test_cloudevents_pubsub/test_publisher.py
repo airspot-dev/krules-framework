@@ -39,19 +39,21 @@ def dispatcher(container, pubsub_project):
 class TestCloudEventsDispatcher:
     """Test suite for CloudEventsDispatcher (publisher)"""
 
-    def test_dispatcher_initialization(self, dispatcher, pubsub_project):
+    @pytest.mark.asyncio
+    async def test_dispatcher_initialization(self, dispatcher, pubsub_project):
         """Dispatcher should initialize with correct configuration."""
         assert dispatcher._project_id == pubsub_project
         assert dispatcher._source == "test-service"
         assert dispatcher._krules is not None
         assert dispatcher.default_dispatch_policy == "direct"
 
-    def test_dispatch_with_string_subject(
+    @pytest.mark.asyncio
+    async def test_dispatch_with_string_subject(
         self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should accept subject name as string."""
         # Dispatch with string subject
-        dispatcher.dispatch(
+        await dispatcher.dispatch(
             event_type="test.event",
             subject="string-subject",
             payload={"test": "data"},
@@ -76,13 +78,14 @@ class TestCloudEventsDispatcher:
             request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
         )
 
-    def test_dispatch_with_dataschema(
+    @pytest.mark.asyncio
+    async def test_dispatch_with_dataschema(
         self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should include dataschema in CloudEvent attributes."""
         subject = container.subject("test-subject")
 
-        dispatcher.dispatch(
+        await dispatcher.dispatch(
             event_type="order.created",
             subject=subject,
             payload={"amount": 100},
@@ -107,27 +110,29 @@ class TestCloudEventsDispatcher:
             request={"subscription": pubsub_subscription, "ack_ids": ack_ids}
         )
 
-    def test_dispatch_without_topic_does_nothing(self, dispatcher, container):
+    @pytest.mark.asyncio
+    async def test_dispatch_without_topic_does_nothing(self, dispatcher, container):
         """Dispatcher should not publish if topic is None."""
         subject = container.subject("test-subject")
 
         # Should not raise, just return early
-        dispatcher.dispatch(
+        await dispatcher.dispatch(
             event_type="test.event",
             subject=subject,
             payload={"test": "data"},
             # No topic specified
         )
 
-    def test_dispatch_includes_subject_ext_props(
+    @pytest.mark.asyncio
+    async def test_dispatch_includes_subject_ext_props(
         self, dispatcher, container, pubsub_topic, pubsub_subscription, subscriber_client
     ):
         """Dispatcher should include subject extended properties in message."""
         subject = container.subject("test-subject")
-        subject.set_ext("routing_key", "orders.new")
-        subject.set_ext("priority", "high")
+        await subject.set_ext("routing_key", "orders.new")
+        await subject.set_ext("priority", "high")
 
-        dispatcher.dispatch(
+        await dispatcher.dispatch(
             event_type="test.event",
             subject=subject,
             payload={"data": "test"},

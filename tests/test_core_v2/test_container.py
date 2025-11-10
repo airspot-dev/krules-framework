@@ -313,7 +313,7 @@ class TestKRulesContainer:
             changes.append(ctx.property_name)
 
         subject = container.subject("test")
-        subject.set("temperature", 75)
+        await subject.set("temperature", 75)
 
         # Give async events time to process
         import asyncio

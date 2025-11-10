@@ -13,10 +13,12 @@
 Pytest fixtures for redis_subjects_storage tests.
 
 Uses local Redis instance (redis://localhost:6379/0).
+Requires pytest-asyncio for async test support.
 """
 
 import pytest
-import redis
+import pytest_asyncio
+from redis.asyncio import Redis
 
 
 # Redis configuration for local testing
@@ -30,38 +32,50 @@ def redis_url():
     return REDIS_URL
 
 
-@pytest.fixture(scope="session")
-def redis_connection():
-    """Create Redis connection for testing."""
-    conn = redis.Redis.from_url(REDIS_URL)
+@pytest_asyncio.fixture
+async def redis_client():
+    """
+    Create async Redis client for testing.
+
+    Automatically skips if Redis is not available.
+    """
+    client = Redis.from_url(REDIS_URL, decode_responses=False)
 
     # Verify connection
     try:
-        conn.ping()
-    except redis.ConnectionError:
-        pytest.skip("Redis not available at localhost:6379")
+        await client.ping()
+    except Exception as e:
+        pytest.skip(f"Redis not available at localhost:6379: {e}")
 
-    return conn
+    yield client
+
+    # Cleanup: close connection
+    await client.aclose()
 
 
-@pytest.fixture(autouse=True)
-def cleanup_redis(redis_connection):
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_redis(redis_client):
     """Clean up test keys before and after each test."""
     # Pre-cleanup: remove all test keys (Redis keys are formatted as s:{prefix}{subject})
-    for key in redis_connection.scan_iter(f"s:{TEST_KEY_PREFIX}*"):
-        redis_connection.delete(key)
+    keys = []
+    async for key in redis_client.scan_iter(f"s:{TEST_KEY_PREFIX}*"):
+        keys.append(key)
     # Also clean any "other:" prefix keys used in isolation tests
-    for key in redis_connection.scan_iter("s:other:*"):
-        redis_connection.delete(key)
+    async for key in redis_client.scan_iter("s:other:*"):
+        keys.append(key)
+    if keys:
+        await redis_client.delete(*keys)
 
     yield
 
     # Post-cleanup: remove all test keys
-    for key in redis_connection.scan_iter(f"s:{TEST_KEY_PREFIX}*"):
-        redis_connection.delete(key)
-    # Also clean any "other:" prefix keys used in isolation tests
-    for key in redis_connection.scan_iter("s:other:*"):
-        redis_connection.delete(key)
+    keys = []
+    async for key in redis_client.scan_iter(f"s:{TEST_KEY_PREFIX}*"):
+        keys.append(key)
+    async for key in redis_client.scan_iter("s:other:*"):
+        keys.append(key)
+    if keys:
+        await redis_client.delete(*keys)
 
 
 @pytest.fixture
@@ -72,27 +86,27 @@ def subject_name(request):
     return f"test-{test_name}"
 
 
-@pytest.fixture
-def redis_storage(redis_url, subject_name):
+@pytest_asyncio.fixture
+async def redis_storage(redis_client, subject_name):
     """Create SubjectsRedisStorage instance for testing."""
     from redis_subjects_storage.storage_impl import SubjectsRedisStorage
 
     return SubjectsRedisStorage(
         subject=subject_name,
-        url=redis_url,
+        redis_client=redis_client,
         key_prefix=TEST_KEY_PREFIX
     )
 
 
 @pytest.fixture
-def redis_storage_factory(redis_url):
+def redis_storage_factory(redis_client):
     """Factory for creating multiple storage instances."""
     from redis_subjects_storage.storage_impl import SubjectsRedisStorage
 
     def factory(subject_name: str):
         return SubjectsRedisStorage(
             subject=subject_name,
-            url=redis_url,
+            redis_client=redis_client,
             key_prefix=TEST_KEY_PREFIX
         )
     return factory

@@ -83,8 +83,8 @@ class TestEventContext:
             })
 
         subject = container.subject("test-subject")
-        subject.set("temperature", 75)
-        subject.set("temperature", 85)
+        await subject.set("temperature", 75)
+        await subject.set("temperature", 85)
 
         import asyncio
         await asyncio.sleep(0.01)
@@ -116,12 +116,12 @@ class TestEventContext:
             })
 
         subject = container.subject("test-subject")
-        subject.set("temp_token", "abc123")
+        await subject.set("temp_token", "abc123")
 
         import asyncio
         await asyncio.sleep(0.01)
 
-        subject.delete("temp_token")
+        await subject.delete("temp_token")
 
         await asyncio.sleep(0.01)
 

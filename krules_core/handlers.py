@@ -86,11 +86,6 @@ def create_handlers(event_bus):
             @on("*")  # Matches all events
             async def log_all(ctx: EventContext):
                 logger.info(f"Event: {ctx.event_type}")
-
-            # Sync handlers also supported
-            @on("sync.event")
-            def sync_handler(ctx: EventContext):
-                ctx.subject.set("sync", True)
         """
         def decorator(func: Callable):
             # Check if @when was applied before @on (collect pending filters)

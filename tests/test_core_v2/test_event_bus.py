@@ -156,8 +156,8 @@ async def test_subject_property_changes_emit_events():
         })
 
     subject = container.subject("device-123")
-    subject.set("temperature", 75)
-    subject.set("temperature", 85)
+    await subject.set("temperature", 75)
+    await subject.set("temperature", 85)
 
     # Give async events time to process
     import asyncio
@@ -188,9 +188,9 @@ async def test_property_change_filtering():
         status_changes.append(ctx.new_value)
 
     subject = container.subject("device")
-    subject.set("temperature", 75)
-    subject.set("status", "ok")
-    subject.set("temperature", 85)
+    await subject.set("temperature", 75)
+    await subject.set("status", "ok")
+    await subject.set("temperature", 85)
 
     import asyncio
     await asyncio.sleep(0.01)
@@ -225,23 +225,6 @@ async def test_context_emit_triggers_handlers():
     await emit("first", subject)
 
     assert sequence == ["first", "second", "third"]
-
-
-@pytest.mark.asyncio
-async def test_sync_handlers():
-    """Non-async handlers should also work"""
-    results = []
-
-    @on("sync.event")
-    def sync_handler(ctx: EventContext):
-        results.append("sync")
-        ctx.subject.set("value", 42)
-
-    subject = container.subject("test")
-    await emit("sync.event", subject)
-
-    assert len(results) == 1
-    assert subject.get("value") == 42
 
 
 @pytest.mark.asyncio
@@ -299,11 +282,11 @@ async def test_multiple_handlers_same_event():
 async def test_subject_lambda_values():
     """Subject.set() should support lambda functions"""
     subject = container.subject("counter")
-    subject.set("count", 0)
-    subject.set("count", lambda c: c + 1)
-    subject.set("count", lambda c: c + 1)
+    await subject.set("count", 0)
+    await subject.set("count", lambda c: c + 1)
+    await subject.set("count", lambda c: c + 1)
 
-    assert subject.get("count") == 2
+    assert await subject.get("count") == 2
 
 
 @pytest.mark.asyncio
@@ -314,8 +297,8 @@ async def test_reusable_filters():
     def is_admin(ctx: EventContext) -> bool:
         return ctx.payload.get("role") == "admin"
 
-    def is_active(ctx: EventContext) -> bool:
-        return ctx.subject.get("status", "inactive") == "active"
+    async def is_active(ctx: EventContext) -> bool:
+        return await ctx.subject.get("status", default="inactive") == "active"
 
     @on("action.execute")
     @when(is_admin)
@@ -324,18 +307,18 @@ async def test_reusable_filters():
         executed.append("admin")
 
     subject = container.subject("user-123")
-    subject.set("status", "active")
+    await subject.set("status", "active")
 
     # Not admin
     await emit("action.execute", subject, {"role": "user"})
     assert len(executed) == 0
 
     # Admin but inactive
-    subject.set("status", "inactive")
+    await subject.set("status", "inactive")
     await emit("action.execute", subject, {"role": "admin"})
     assert len(executed) == 0
 
     # Admin and active
-    subject.set("status", "active")
+    await subject.set("status", "active")
     await emit("action.execute", subject, {"role": "admin"})
     assert len(executed) == 1

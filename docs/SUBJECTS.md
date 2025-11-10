@@ -214,6 +214,57 @@ async def on_email_change(ctx):
 - `ctx.old_value` - Previous value (None if new property)
 - `ctx.new_value` - New value
 - `ctx.subject` - The subject
+- `ctx.extra` - Extra context dict (see below)
+
+### Passing Extra Context
+
+You can pass additional context to event handlers using the `extra` parameter:
+
+```python
+# Set with extra context
+await user.set("status", "suspended", extra={
+    "reason": "policy_violation",
+    "admin_id": "admin-123",
+    "timestamp": datetime.now().isoformat()
+})
+
+# Delete with extra context
+await user.delete("temp_data", extra={
+    "reason": "expired",
+    "retention_days": 30
+})
+
+# Access extra in handler
+@on(SUBJECT_PROPERTY_CHANGED)
+async def on_status_change(ctx):
+    if ctx.property_name == "status" and ctx.new_value == "suspended":
+        # Access extra context
+        reason = ctx.extra.get("reason") if ctx.extra else None
+        admin_id = ctx.extra.get("admin_id") if ctx.extra else None
+
+        await ctx.emit("user.suspended", {
+            "reason": reason,
+            "admin": admin_id
+        })
+```
+
+**Use `extra` for:**
+- Audit trail information (who made the change, when, why)
+- Business context (approval workflow, user actions)
+- Debugging metadata (source system, request ID)
+- Conditional handler logic
+
+**Important:** The `extra` dict is optional and may be `None` - always check before accessing:
+
+```python
+@on(SUBJECT_PROPERTY_CHANGED)
+async def handler(ctx):
+    # Safe access
+    reason = ctx.extra.get("reason") if ctx.extra else "unknown"
+
+    # Or with default
+    user_id = (ctx.extra or {}).get("user_id", "system")
+```
 
 ### Muted Properties (No Events)
 

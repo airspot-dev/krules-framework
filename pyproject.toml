@@ -25,7 +25,6 @@ dependencies = [
     "dependency-injector==4.48.2",
     "pydantic-settings>=2.11.0",
     "redis>=6.4.0",
-    "wrapt>=1.16.0, <2.0.0",
 ]
 
 [project.optional-dependencies]

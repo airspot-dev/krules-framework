@@ -39,14 +39,16 @@ def subscriber(container):
 class TestPubSubSubscriber:
     """Test suite for PubSubSubscriber"""
 
-    def test_subscriber_initialization(self, subscriber, container):
+    @pytest.mark.asyncio
+    async def test_subscriber_initialization(self, subscriber, container):
         """Subscriber should initialize with injected dependencies."""
         assert subscriber.event_bus is not None
         assert subscriber.subject_factory is not None
         assert subscriber._running is False
         assert len(subscriber.subscription_tasks) == 0
 
-    def test_subscriber_requires_event_bus(self, container):
+    @pytest.mark.asyncio
+    async def test_subscriber_requires_event_bus(self, container):
         """Subscriber should raise if event_bus is None."""
         with pytest.raises(ValueError, match="event_bus is required"):
             PubSubSubscriber(
@@ -54,7 +56,8 @@ class TestPubSubSubscriber:
                 subject_factory=container.subject,
             )
 
-    def test_subscriber_requires_subject_factory(self, container):
+    @pytest.mark.asyncio
+    async def test_subscriber_requires_subject_factory(self, container):
         """Subscriber should raise if subject_factory is None."""
         with pytest.raises(ValueError, match="subject_factory is required"):
             PubSubSubscriber(

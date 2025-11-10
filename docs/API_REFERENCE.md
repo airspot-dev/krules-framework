@@ -65,7 +65,7 @@ Dynamic entity with reactive properties.
 
 **Methods:**
 
-#### `async set(prop: str, value: Any, muted: bool = False, use_cache: bool | None = None) -> tuple[Any, Any]`
+#### `async set(prop: str, value: Any, muted: bool = False, extra: dict | None = None) -> tuple[Any, Any]`
 
 Set property value (async).
 
@@ -73,7 +73,7 @@ Set property value (async).
 - `prop` (str): Property name
 - `value` (Any | Callable): Value or lambda function
 - `muted` (bool): If True, don't emit property change event
-- `use_cache` (bool | None): Override caching behavior
+- `extra` (dict | None): Optional context dict passed to event handlers
 
 **Returns:** tuple[(new_value, old_value)]
 
@@ -82,6 +82,7 @@ Set property value (async).
 await user.set("email", "john@example.com")
 await user.set("counter", lambda c: c + 1)
 await user.set("internal", 0, muted=True)
+await user.set("status", "suspended", extra={"reason": "policy_violation"})
 ```
 
 #### `async get(prop: str, use_cache: bool | None = None, default: Any = None) -> Any`
@@ -103,20 +104,21 @@ email = await user.get("email")
 status = await user.get("status", default="inactive")
 ```
 
-#### `async delete(prop: str, muted: bool = False, use_cache: bool | None = None) -> None`
+#### `async delete(prop: str, muted: bool = False, extra: dict | None = None) -> None`
 
 Delete property (async).
 
 **Parameters:**
 - `prop` (str): Property name
 - `muted` (bool): If True, don't emit property deleted event
-- `use_cache` (bool | None): Override caching behavior
+- `extra` (dict | None): Optional context dict passed to event handlers
 
 **Returns:** None
 
 **Example:**
 ```python
 await user.delete("temp_token")
+await user.delete("cache", extra={"reason": "expired"})
 ```
 
 #### `async set_ext(prop: str, value: Any, use_cache: bool | None = None) -> tuple[Any, Any]`
@@ -183,7 +185,7 @@ Register event handler.
 
 **Returns:** Handler instance
 
-#### `async emit(event_type: str, subject: Any, payload: dict, **extra) -> None`
+#### `async emit(event_type: str, subject: Any, payload: dict, extra: dict | None = None, **kwargs) -> None`
 
 Emit event to all matching handlers (async).
 
@@ -191,7 +193,8 @@ Emit event to all matching handlers (async).
 - `event_type` (str): Event type
 - `subject` (Subject): Subject instance
 - `payload` (dict): Event payload
-- `**extra`: Additional metadata
+- `extra` (dict | None): Extra context dict passed to handlers (accessible via ctx.extra)
+- `**kwargs`: Additional metadata (stored in ctx._metadata)
 
 #### `add_middleware(middleware: Callable) -> None`
 
@@ -212,6 +215,7 @@ Context passed to handlers.
 - `event_type` (str): Event type
 - `subject` (Subject): Subject instance
 - `payload` (dict): Event payload
+- `extra` (dict | None): Extra context dict passed from set()/delete() operations
 - `property_name` (str | None): Property name (for property change events)
 - `old_value` (Any | None): Old value (for property change events)
 - `new_value` (Any | None): New value (for property change events)

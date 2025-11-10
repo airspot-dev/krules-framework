@@ -61,9 +61,9 @@ class TestSubjectFlush:
             })
 
         subject = container.subject("user-123")
-        subject.set("email", "user@example.com")
-        subject.set("age", 30)
-        subject.set("status", "active")
+        await subject.set("email", "user@example.com")
+        await subject.set("age", 30)
+        await subject.set("status", "active")
 
         # Flush (delete) the subject
         await subject.flush()
@@ -104,8 +104,8 @@ class TestSubjectFlush:
             })
 
         subject = container.subject("device-456")
-        subject.set("temperature", 75.5)
-        subject.set("status", "online")
+        await subject.set("temperature", 75.5)
+        await subject.set("status", "online")
 
         # Flush (delete) the subject
         await subject.flush()
@@ -135,8 +135,8 @@ class TestSubjectFlush:
             })
 
         subject = container.subject("test-subject")
-        subject.set("normal_prop", "value1")
-        subject.set_ext("extended_prop", "value2")
+        await subject.set("normal_prop", "value1")
+        await subject.set_ext("extended_prop", "value2")
 
         # Flush (delete) the subject
         await subject.flush()
@@ -156,7 +156,7 @@ class TestSubjectFlush:
     async def test_flush_resets_cache(self):
         """flush() should reset the cache after deletion"""
         subject = container.subject("cache-test")
-        subject.set("prop1", "value1")
+        await subject.set("prop1", "value1")
 
         # Cache should be populated
         assert subject._cached is not None
@@ -194,7 +194,7 @@ class TestSubjectFlush:
     async def test_flush_returns_self(self):
         """flush() should return AwaitableResult(self)"""
         subject = container.subject("return-test")
-        subject.set("test", "value")
+        await subject.set("test", "value")
 
         result = await subject.flush()
 
@@ -211,7 +211,7 @@ class TestSubjectFlush:
             deleted_subjects.append(ctx.subject.name)
 
         subject = container.subject("constant-test")
-        subject.set("prop", "value")
+        await subject.set("prop", "value")
 
         await subject.flush()
 
@@ -231,7 +231,7 @@ class TestSubjectFlush:
             flushed_subjects.append(ctx.subject.name)
 
         subject = container.subject("legacy-test")
-        subject.set("prop", "value")
+        await subject.set("prop", "value")
 
         await subject.flush()
 
