@@ -63,9 +63,25 @@ class Subject
 
 Dynamic entity with reactive properties.
 
+**Constructor:**
+
+#### `__init__(name, storage, event_bus, event_info=None, event_data=None, use_cache_default=True)`
+
+Initialize a Subject.
+
+**Parameters:**
+- `name` (str): Subject name/identifier
+- `storage`: Storage factory provider
+- `event_bus`: EventBus instance
+- `event_info` (dict, optional): Event information dictionary
+- `event_data` (any, optional): Event data
+- `use_cache_default` (bool): Default caching behavior (default: True)
+
+**Note:** Direct instantiation is not recommended. Use `KRulesContainer.subject()` instead.
+
 **Methods:**
 
-#### `async set(prop: str, value: Any, muted: bool = False, extra: dict | None = None) -> tuple[Any, Any]`
+#### `async set(prop: str, value: Any, muted: bool = False, extra: dict | None = None, use_cache: bool | None = None) -> tuple[Any, Any]`
 
 Set property value (async).
 
@@ -74,6 +90,7 @@ Set property value (async).
 - `value` (Any | Callable): Value or lambda function
 - `muted` (bool): If True, don't emit property change event
 - `extra` (dict | None): Optional context dict passed to event handlers
+- `use_cache` (bool | None): If True, cache only; if False, write directly to storage; if None, use constructor default
 
 **Returns:** tuple[(new_value, old_value)]
 
@@ -83,16 +100,17 @@ await user.set("email", "john@example.com")
 await user.set("counter", lambda c: c + 1)
 await user.set("internal", 0, muted=True)
 await user.set("status", "suspended", extra={"reason": "policy_violation"})
+await user.set("metric", 100, use_cache=False)  # Write immediately to storage
 ```
 
-#### `async get(prop: str, use_cache: bool | None = None, default: Any = None) -> Any`
+#### `async get(prop: str, default: Any = None, use_cache: bool | None = None) -> Any`
 
 Get property value (async).
 
 **Parameters:**
 - `prop` (str): Property name
-- `use_cache` (bool | None): Override caching behavior
 - `default` (Any): Default value if property doesn't exist
+- `use_cache` (bool | None): If True, read from cache; if False, read from storage; if None, use constructor default
 
 **Returns:** Property value
 
@@ -102,9 +120,10 @@ Get property value (async).
 ```python
 email = await user.get("email")
 status = await user.get("status", default="inactive")
+fresh = await user.get("counter", use_cache=False)  # Read from storage
 ```
 
-#### `async delete(prop: str, muted: bool = False, extra: dict | None = None) -> None`
+#### `async delete(prop: str, muted: bool = False, extra: dict | None = None, use_cache: bool | None = None) -> None`
 
 Delete property (async).
 
@@ -112,6 +131,7 @@ Delete property (async).
 - `prop` (str): Property name
 - `muted` (bool): If True, don't emit property deleted event
 - `extra` (dict | None): Optional context dict passed to event handlers
+- `use_cache` (bool | None): If True, cache only; if False, delete from storage; if None, use constructor default
 
 **Returns:** None
 
@@ -119,6 +139,7 @@ Delete property (async).
 ```python
 await user.delete("temp_token")
 await user.delete("cache", extra={"reason": "expired"})
+await user.delete("session", use_cache=False)  # Delete immediately from storage
 ```
 
 #### `async set_ext(prop: str, value: Any, use_cache: bool | None = None) -> tuple[Any, Any]`

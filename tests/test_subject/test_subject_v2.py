@@ -21,6 +21,8 @@ All tests are async and use the new async API:
 
 import pytest
 from krules_core.container import KRulesContainer
+from dependency_injector import providers
+from tests.test_subject.test_storage_helper import create_test_storage, InMemoryTestStorage
 
 
 # Global container for the test module
@@ -35,9 +37,13 @@ def setup():
     # Create new container for each test (isolation)
     container = KRulesContainer()
 
+    # Override storage with test storage for use_cache tests
+    container.subject_storage.override(providers.Object(create_test_storage()))
+
     yield
 
     # Cleanup
+    InMemoryTestStorage.clear_all()
     container = None
 
 
@@ -282,3 +288,143 @@ class TestSubjectAsync:
         # Delete with empty extra
         await subject.delete("prop3", extra={})
         assert received_extra[-1] == {}
+
+    async def test_subject_use_cache_false_set(self):
+        """Subject.set() with use_cache=False should write directly to storage"""
+        subject = container.subject("test")
+
+        # Set with use_cache=False writes directly to storage
+        await subject.set("prop1", "value1", use_cache=False)
+
+        # Verify cache was not created
+        assert subject._cached is None
+
+        # Can still read value (loads from storage)
+        assert await subject.get("prop1") == "value1"
+
+    async def test_subject_use_cache_false_get(self):
+        """Subject.get() with use_cache=False should read directly from storage"""
+        subject1 = container.subject("test")
+        subject2 = container.subject("test")
+
+        # subject1: Set value normally (creates cache)
+        await subject1.set("prop1", "value1")
+
+        # subject2: Modify storage directly (no cache on subject2)
+        await subject2.set("prop1", "value2", use_cache=False)
+
+        # subject1: Reading with use_cache=True returns old cached value
+        assert await subject1.get("prop1", use_cache=True) == "value1"
+
+        # subject1: Reading with use_cache=False returns fresh storage value
+        assert await subject1.get("prop1", use_cache=False) == "value2"
+
+    async def test_subject_use_cache_false_delete(self):
+        """Subject.delete() with use_cache=False should delete directly from storage"""
+        subject = container.subject("test")
+
+        # Create property
+        await subject.set("prop1", "value1", use_cache=False)
+
+        # Delete with use_cache=False
+        await subject.delete("prop1", use_cache=False)
+
+        # Verify it's deleted from storage
+        with pytest.raises(AttributeError):
+            await subject.get("prop1", use_cache=False)
+
+    async def test_subject_use_cache_default_false(self):
+        """Subject with use_cache_default=False should write directly to storage by default"""
+        from krules_core.subject.storaged_subject import Subject
+
+        # Create subject with use_cache_default=False
+        subject = Subject(
+            name="test-default-false",
+            storage=create_test_storage(),
+            event_bus=container.event_bus(),
+            use_cache_default=False
+        )
+
+        # Set without explicit use_cache (should use default=False)
+        await subject.set("prop1", "value1")
+
+        # Verify cache was not created
+        assert subject._cached is None
+
+        # Can still read value
+        assert await subject.get("prop1") == "value1"
+
+    async def test_subject_use_cache_false_set_ext(self):
+        """Subject.set_ext() with use_cache=False should write directly to storage"""
+        subject = container.subject("test")
+
+        # Set extended property with use_cache=False
+        await subject.set_ext("ext_prop", "ext_value", use_cache=False)
+
+        # Verify cache was not created
+        assert subject._cached is None
+
+        # Can still read value
+        assert await subject.get_ext("ext_prop") == "ext_value"
+
+    async def test_subject_use_cache_false_get_ext(self):
+        """Subject.get_ext() with use_cache=False should read directly from storage"""
+        subject1 = container.subject("test")
+        subject2 = container.subject("test")
+
+        # subject1: Set extended property normally (creates cache)
+        await subject1.set_ext("ext_prop", "value1")
+
+        # subject2: Modify storage directly (no cache on subject2)
+        await subject2.set_ext("ext_prop", "value2", use_cache=False)
+
+        # subject1: Reading with use_cache=True returns old cached value
+        assert await subject1.get_ext("ext_prop", use_cache=True) == "value1"
+
+        # subject1: Reading with use_cache=False returns fresh storage value
+        assert await subject1.get_ext("ext_prop", use_cache=False) == "value2"
+
+    async def test_subject_use_cache_false_delete_ext(self):
+        """Subject.delete_ext() with use_cache=False should delete directly from storage"""
+        subject = container.subject("test")
+
+        # Create extended property
+        await subject.set_ext("ext_prop", "value1", use_cache=False)
+
+        # Delete with use_cache=False
+        await subject.delete_ext("ext_prop", use_cache=False)
+
+        # Verify it's deleted from storage
+        with pytest.raises(AttributeError):
+            await subject.get_ext("ext_prop", use_cache=False)
+
+    async def test_subject_use_cache_false_callable(self):
+        """Subject.set() with use_cache=False should handle callables atomically"""
+        subject = container.subject("counter")
+
+        # Initialize counter
+        await subject.set("count", 0, use_cache=False)
+
+        # Increment with callable and use_cache=False (atomic operation in storage)
+        await subject.set("count", lambda c: c + 1, use_cache=False)
+        await subject.set("count", lambda c: c + 1, use_cache=False)
+        await subject.set("count", lambda c: c + 1, use_cache=False)
+
+        # Verify final value
+        assert await subject.get("count", use_cache=False) == 3
+
+    async def test_subject_use_cache_sync_after_direct_write(self):
+        """Cache should sync with storage after direct write when cache exists"""
+        from krules_core.subject import PropertyType
+
+        subject = container.subject("test")
+
+        # Create cache by reading
+        await subject.set("prop1", "value1")
+        assert subject._cached is not None
+
+        # Write directly to storage with use_cache=False
+        await subject.set("prop1", "value2", use_cache=False)
+
+        # Cache should be updated
+        assert subject._cached[PropertyType.DEFAULT]["values"]["prop1"] == "value2"

@@ -283,25 +283,106 @@ await user.set("internal_counter", lambda c: c + 1, muted=True)
 
 ## Caching & Performance
 
-Subjects use an intelligent caching system to optimize performance.
+Subjects use an intelligent caching system to optimize performance. You can control caching behavior at both the Subject level and per-operation level.
 
 ### Cache Strategy
+
+By default, Subject operations use caching for performance:
 
 ```python
 # Default: caching enabled
 user = container.subject("user-123")
 await user.set("name", "John")    # Cached
 await user.set("email", "j@e.com") # Cached
-await user.store()                 # Persist all changes
-
-# Disable caching for single operation
-await user.set("counter", 1, use_cache=False)  # Immediate write to storage
+await user.store()                 # Persist all changes to storage
 ```
 
 **Caching behavior:**
 - **Enabled (default)** - Changes cached in memory, written on `.store()`
 - **Disabled** - Each operation immediately hits storage
 - **Trade-off** - Cache = performance, No cache = consistency
+
+### Per-Operation Cache Control
+
+Use the `use_cache` parameter to control caching for specific operations:
+
+```python
+user = container.subject("user-123")
+
+# Write immediately to storage (bypass cache)
+await user.set("counter", 1, use_cache=False)
+
+# Read fresh value from storage (bypass cache)
+fresh_value = await user.get("counter", use_cache=False)
+
+# Delete immediately from storage
+await user.delete("temp_field", use_cache=False)
+```
+
+**When to use `use_cache=False`:**
+- **Cross-process coordination** - Multiple processes/containers accessing same subject
+- **Atomic operations** - Lambda values with `use_cache=False` ensure atomic storage updates
+- **Fresh data required** - Reading latest value modified by another process
+- **Immediate persistence** - Critical data that must survive crashes
+
+**Example - Distributed counter:**
+```python
+# Multiple processes can safely increment the same counter
+counter = container.subject("global-counter")
+
+# Atomic increment directly in storage (safe across processes)
+await counter.set("count", lambda c: (c or 0) + 1, use_cache=False)
+
+# Read fresh value from storage
+current = await counter.get("count", use_cache=False)
+```
+
+### Subject-Level Cache Control
+
+Configure default caching behavior when creating a Subject:
+
+```python
+from krules_core.subject.storaged_subject import Subject
+
+# Create subject with caching disabled by default
+subject = Subject(
+    name="realtime-metrics",
+    storage=storage_factory,
+    event_bus=event_bus,
+    use_cache_default=False
+)
+
+# All operations default to use_cache=False
+await subject.set("metric", 100)  # Writes immediately to storage
+
+# Can override per-operation
+await subject.set("temp", "value", use_cache=True)  # Use cache for this one
+```
+
+**When to disable caching by default:**
+- Real-time metrics and telemetry
+- Subjects accessed by multiple processes
+- Low-frequency operations where caching overhead isn't worth it
+- Debugging scenarios requiring immediate persistence
+
+### Cache Synchronization
+
+When using `use_cache=False` on a Subject that has an active cache, the cache is automatically synchronized:
+
+```python
+user = container.subject("user-123")
+
+# Load cache
+await user.set("status", "active")
+
+# Direct storage write also updates cache
+await user.set("status", "inactive", use_cache=False)
+
+# Cache is synchronized - returns "inactive"
+cached_value = await user.get("status", use_cache=True)
+```
+
+This ensures consistency between cache and storage.
 
 ### Batch Operations
 
