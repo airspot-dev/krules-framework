@@ -82,6 +82,10 @@ class TestSubjectAsync:
         value = await subject.get("missing", default="default-value")
         assert value == "default-value"
 
+        # Property doesn't exist - should return None when default=None
+        value = await subject.get("missing", default=None)
+        assert value is None
+
         # Property doesn't exist - should raise without default
         with pytest.raises(AttributeError):
             await subject.get("missing")
@@ -95,6 +99,10 @@ class TestSubjectAsync:
 
         assert await subject.get_ext("metadata") == {"key": "value"}
         assert await subject.get_ext("tags") == ["tag1", "tag2"]
+
+        # Test default=None works correctly
+        value = await subject.get_ext("missing", default=None)
+        assert value is None
 
         ext_props = await subject.get_ext_props()
         assert "metadata" in ext_props

@@ -4,6 +4,10 @@ import asyncio
 from krules_core.subject import SubjectProperty, SubjectExtProperty, PayloadConst, PropertyType
 
 
+# Sentinel value to distinguish "default not provided" from "default=None"
+_NOT_PROVIDED = object()
+
+
 class Subject:
     """
     Async Subject implementation for KRules.
@@ -86,7 +90,7 @@ class Subject:
         self._cached[PropertyType.DEFAULT]["values"] = props
         self._cached[PropertyType.EXTENDED]["values"] = ext_props
 
-    async def get(self, prop, default=None, use_cache=None):
+    async def get(self, prop, default=_NOT_PROVIDED, use_cache=None):
         """
         Get a property value.
 
@@ -102,6 +106,7 @@ class Subject:
         Example:
             name = await user.get("name")
             age = await user.get("age", default=0)
+            value_or_none = await user.get("maybe", default=None)
             fresh_data = await user.get("data", use_cache=False)  # Read directly from storage
         """
         # Determine cache usage
@@ -117,7 +122,7 @@ class Subject:
             try:
                 return self._cached[PropertyType.DEFAULT]["values"][prop]
             except KeyError:
-                if default is not None:
+                if default is not _NOT_PROVIDED:
                     return default
                 raise AttributeError(f"Property '{prop}' not found")
         else:
@@ -136,11 +141,11 @@ class Subject:
 
                 return value
             except AttributeError:
-                if default is not None:
+                if default is not _NOT_PROVIDED:
                     return default
                 raise AttributeError(f"Property '{prop}' not found")
 
-    async def get_ext(self, prop, default=None, use_cache=None):
+    async def get_ext(self, prop, default=_NOT_PROVIDED, use_cache=None):
         """
         Get an extended property value.
 
@@ -155,6 +160,7 @@ class Subject:
 
         Example:
             tenant = await user.get_ext("tenant_id")
+            tags_or_none = await user.get_ext("tags", default=None)
             fresh_tenant = await user.get_ext("tenant_id", use_cache=False)  # Read from storage
         """
         # Determine cache usage
@@ -170,7 +176,7 @@ class Subject:
             try:
                 return self._cached[PropertyType.EXTENDED]["values"][prop]
             except KeyError:
-                if default is not None:
+                if default is not _NOT_PROVIDED:
                     return default
                 raise AttributeError(f"Extended property '{prop}' not found")
         else:
@@ -189,7 +195,7 @@ class Subject:
 
                 return value
             except AttributeError:
-                if default is not None:
+                if default is not _NOT_PROVIDED:
                     return default
                 raise AttributeError(f"Extended property '{prop}' not found")
 
