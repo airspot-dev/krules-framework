@@ -5,6 +5,25 @@ All notable changes to KRules Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2025-11-10
+
+### 🐛 Bug Fixes
+
+- **Fixed `default=None` handling in `get()` and `get_ext()`**
+  - Bug: Passing `default=None` explicitly raised `AttributeError` instead of returning `None`
+  - Root cause: Code could not distinguish "default not provided" from "default=None"
+  - Solution: Use sentinel value (`_NOT_PROVIDED`) to distinguish the two cases
+  - Now works correctly:
+    - `await subject.get("missing")` → raises `AttributeError` ✓
+    - `await subject.get("missing", default=None)` → returns `None` ✓ (FIXED)
+    - `await subject.get("missing", default=1)` → returns `1` ✓
+  - Same fix applied to `get_ext()`
+
+### 🧪 Testing
+
+- Added test cases for `default=None` behavior in both `get()` and `get_ext()`
+- All 81 tests passing
+
 ## [3.1.0] - 2025-11-10
 
 ### ✨ Added
