@@ -5,6 +5,65 @@ All notable changes to KRules Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2025-11-10
+
+### ✨ Added
+
+- **`use_cache` Parameter Restored** - Fine-grained cache control for all Subject operations
+  - Added `use_cache` parameter to `get()`, `set()`, `delete()` and their `_ext` variants
+  - Added `use_cache_default` parameter to `Subject.__init__()` for Subject-level defaults
+  - `use_cache=False` bypasses cache and operates directly on storage
+  - `use_cache=True` uses cache (requires `await subject.store()` to persist)
+  - `use_cache=None` (default) uses the Subject's `use_cache_default` setting
+
+- **Direct Storage Operations** - When `use_cache=False`:
+  - Writes immediately persist to storage (Redis, PostgreSQL)
+  - Reads fetch fresh data from storage, bypassing any cached values
+  - Deletes immediately remove from storage
+  - Atomic operations with callables use storage-level transactions (Redis WATCH/MULTI/EXEC, PostgreSQL SELECT FOR UPDATE)
+  - Cache automatically synchronized when present
+
+- **Cross-Process Coordination** - `use_cache=False` enables:
+  - Distributed counters with atomic increments
+  - Fresh data reads across multiple processes/containers
+  - Immediate visibility of changes to other processes
+  - Lock-like patterns with immediate storage writes
+
+### 📚 Documentation
+
+- Expanded `docs/SUBJECTS.md` with comprehensive caching documentation
+  - Per-operation cache control examples
+  - Subject-level cache control patterns
+  - Cache synchronization behavior
+  - Distributed systems use cases
+- Updated `docs/API_REFERENCE.md` with complete method signatures
+- Updated krules-claude-skill with `use_cache` examples
+
+### 🧪 Testing
+
+- Added 9 comprehensive tests for `use_cache` functionality
+- Created `InMemoryTestStorage` helper for persistent test storage
+- All 27 Subject tests passing, 81 total tests passing
+
+### 🔧 Technical Details
+
+This release restores the `use_cache` functionality that existed in v2.x but was inadvertently lost during the v3.0 async migration. All changes are **fully backward compatible** - existing code continues to work unchanged as the default behavior remains `use_cache=True` (cache-first).
+
+**Use Cases:**
+```python
+# Immediate persistence (critical data)
+await subject.set("signal", "BUY", use_cache=False)
+
+# Fresh data from storage (multi-process)
+price = await subject.get("price", use_cache=False)
+
+# Atomic distributed counter
+await counter.set("count", lambda c: (c or 0) + 1, use_cache=False)
+
+# Subject-level control
+subject = Subject(..., use_cache_default=False)  # All ops bypass cache by default
+```
+
 ## [3.0.0] - 2025-11-10
 
 ### 🚀 Major Changes - Async-Only API
