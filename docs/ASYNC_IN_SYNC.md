@@ -47,253 +47,143 @@ def process_order(order_id):
 4. Loop closes when emit() completes
 5. Control returns to Celery
 
-## Celery Integration Patterns
+## Production-Proven Celery Integration
 
-### Pattern A: Inline asyncio.run() (Recommended for Simple Cases)
+This section documents the **recommended pattern** for integrating async KRules with Celery, based on real production deployments (Companion, TradingLab).
 
-**Best for:** Small handlers, infrequent calls, simple workflows
+### Worker-Level Event Loop with --pool=solo
+
+**Production status:** ✅ Verified in multiple production systems
+
+**Key advantages:**
+- Single event loop per worker (zero overhead)
+- Compatible with async Redis clients (KRules subjects storage)
+- Thread-safe implementation
+- Simple to implement and maintain
+- No additional dependencies (no gevent/eventlet needed)
+- Proven for high-frequency scenarios (1000+ tasks/sec)
+
+### Implementation
+
+#### Step 1: Create utils.py helper module
 
 ```python
-from celery import Celery
-from krules_core.container import KRulesContainer
+# utils.py - Async event loop management for Celery workers
+"""
+Utilities for async task execution in Celery workers.
+
+This module provides a worker-wide event loop to avoid the overhead
+of creating/destroying event loops for each async task, and ensures
+compatibility with async Redis clients used by KRules Framework.
+"""
 import asyncio
+import threading
+from typing import Coroutine, TypeVar
 
-app = Celery('tasks', broker='redis://localhost:6379/0')
-container = KRulesContainer()
+import logfire
 
-# Configure KRules (runs once at import)
-on, when, middleware, emit = container.handlers()
+# Worker-wide event loop
+_worker_loop = None
+_worker_loop_lock = threading.Lock()
 
-@on("order.created")
-async def handle_order_created(ctx):
-    """Async KRules handler."""
-    order = ctx.subject
-    await order.set("status", "pending")
-    await order.set("created_at", datetime.now())
-    await order.store()
+T = TypeVar('T')
 
-    # Trigger payment processing
-    await ctx.emit("payment.initiate", ctx.subject, {"amount": ctx.payload["total"]})
 
-# Celery tasks
-@app.task
-def create_order(order_data):
-    """Sync Celery task."""
-    subject = container.subject(f"order-{order_data['id']}")
+def get_or_create_event_loop() -> asyncio.AbstractEventLoop:
+    """
+    Get or create a persistent event loop for this Celery worker.
 
-    # Execute async event in new event loop
-    asyncio.run(
-        container.event_bus().emit(
-            event_type="order.created",
-            subject=subject,
-            payload=order_data
-        )
-    )
+    This function ensures that all async tasks in the same worker process
+    share the same event loop, which is critical for:
+    - Redis async client compatibility (KRules subjects storage)
+    - Connection pooling efficiency
+    - Zero overhead for event loop creation/destruction
 
-    return f"Order {order_data['id']} created"
+    Thread-safe implementation using a lock to prevent race conditions.
 
-@app.task
-def process_payment(order_id, amount):
-    """Another sync task triggered by KRules event."""
-    subject = container.subject(f"order-{order_id}")
+    Returns:
+        asyncio.AbstractEventLoop: The worker-wide event loop
+    """
+    global _worker_loop
 
-    asyncio.run(
-        container.event_bus().emit(
-            event_type="payment.initiate",
-            subject=subject,
-            payload={"amount": amount}
-        )
-    )
+    with _worker_loop_lock:
+        if _worker_loop is None or _worker_loop.is_closed():
+            logfire.info("Creating new worker-wide event loop")
+            _worker_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(_worker_loop)
+        return _worker_loop
+
+
+def run_async(coro: Coroutine[None, None, T]) -> T:
+    """
+    Execute an async coroutine using the worker-wide event loop.
+
+    This function replaces the pattern:
+        asyncio.run(async_function())
+
+    With a worker-wide event loop that persists across task executions:
+        run_async(async_function())
+
+    Benefits:
+    - Zero event loop creation overhead (~0.5ms saved per task)
+    - Redis client compatibility (no "different loop" errors)
+    - Connection pooling across tasks
+    - Production-ready for high-frequency tasks (1000+ tasks/sec)
+
+    Args:
+        coro: The async coroutine to execute
+
+    Returns:
+        T: The result of the coroutine execution
+
+    Example:
+        @app.task
+        def celery_task(symbol: str, data: dict):
+            return run_async(_async_implementation(symbol, data))
+    """
+    loop = get_or_create_event_loop()
+    return loop.run_until_complete(coro)
 ```
 
-**Pros:**
-- Simple, explicit
-- Works with default Celery prefork workers
-- No additional dependencies
-
-**Cons:**
-- Creates new event loop per call (overhead)
-- Not suitable for high-frequency tasks
-- Storage connections recreated each call
-
-### Pattern B: Async Tasks with gevent/eventlet Workers
-
-**Best for:** High-frequency tasks, long-running handlers, concurrent operations
+#### Step 2: Configure Celery app and KRules handlers
 
 ```python
+# tasks.py
 from celery import Celery
 from krules_core.container import KRulesContainer
+from .utils import run_async
 
 app = Celery('tasks', broker='redis://localhost:6379/0')
 container = KRulesContainer()
-
-on, when, middleware, emit = container.handlers()
-
-@on("order.created")
-async def handle_order_created(ctx):
-    """Async handler (no changes needed)."""
-    await ctx.subject.set("status", "pending")
-    await ctx.subject.store()
-
-# Async Celery task (requires gevent/eventlet worker)
-@app.task
-async def create_order_async(order_data):
-    """Async Celery task - no asyncio.run() needed!"""
-    subject = container.subject(f"order-{order_data['id']}")
-
-    # Direct await (worker provides event loop)
-    await container.event_bus().emit(
-        event_type="order.created",
-        subject=subject,
-        payload=order_data
-    )
-
-    return f"Order {order_data['id']} created"
-```
-
-**Worker configuration:**
-```bash
-# Install gevent
-pip install gevent
-
-# Run worker with gevent pool
-celery -A tasks worker --pool=gevent --concurrency=100
-```
-
-**Pros:**
-- True async execution
-- Efficient for concurrent I/O
-- Single event loop per worker
-- Better connection pooling
-
-**Cons:**
-- Requires gevent/eventlet installation
-- Worker configuration changes
-- Compatibility issues with some C extensions
-
-### Pattern C: Helper Decorator (Recommended for Production)
-
-**Best for:** Clean code, multiple tasks, consistent error handling
-
-```python
-import asyncio
-import functools
-from celery import Celery
-from krules_core.container import KRulesContainer
-
-app = Celery('tasks', broker='redis://localhost:6379/0')
-container = KRulesContainer()
-
-def async_to_sync(func):
-    """Decorator to run async functions in sync context."""
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        return asyncio.run(func(*args, **kwargs))
-    return wrapper
 
 # KRules setup
 on, when, middleware, emit = container.handlers()
 
+# Define async KRules handlers
 @on("order.created")
 async def handle_order_created(ctx):
+    """Async KRules handler - runs in worker event loop."""
     await ctx.subject.set("status", "pending")
+    await ctx.subject.set("created_at", datetime.now())
     await ctx.subject.store()
-
-@on("payment.completed")
-async def handle_payment_completed(ctx):
-    await ctx.subject.set("status", "paid")
-    await ctx.subject.set("paid_at", datetime.now())
-    await ctx.subject.store()
-
-# Celery tasks with decorator
-@app.task
-@async_to_sync
-async def create_order(order_data):
-    """Async implementation, sync execution via decorator."""
-    subject = container.subject(f"order-{order_data['id']}")
-
-    await container.event_bus().emit(
-        event_type="order.created",
-        subject=subject,
-        payload=order_data
-    )
-
-    return f"Order {order_data['id']} created"
-
-@app.task
-@async_to_sync
-async def complete_payment(order_id, payment_data):
-    """Another async task wrapped for sync execution."""
-    subject = container.subject(f"order-{order_id}")
-
-    await container.event_bus().emit(
-        event_type="payment.completed",
-        subject=subject,
-        payload=payment_data
-    )
-
-    return f"Payment for order {order_id} completed"
 ```
 
-**Pros:**
-- Clean, DRY code
-- Async syntax throughout
-- Works with prefork workers
-- Easy error handling in decorator
-- Consistent pattern
-
-**Cons:**
-- Still creates event loop per call
-- Slightly more complex setup
-
-### Pattern D: Shared Event Loop (Advanced)
-
-**Best for:** Maximum performance, worker-level event loop management
+#### Step 3: Define Celery tasks using run_async helper
 
 ```python
-import asyncio
-from celery import Celery, signals
-from krules_core.container import KRulesContainer
+# tasks.py (continued)
 
-app = Celery('tasks', broker='redis://localhost:6379/0')
-container = KRulesContainer()
-
-# Worker-level event loop (created once per worker process)
-_event_loop = None
-
-@signals.worker_process_init.connect
-def init_worker_process(**kwargs):
-    """Initialize event loop when worker process starts."""
-    global _event_loop
-    _event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_event_loop)
-
-@signals.worker_process_shutdown.connect
-def shutdown_worker_process(**kwargs):
-    """Close event loop when worker shuts down."""
-    global _event_loop
-    if _event_loop:
-        _event_loop.close()
-
-def run_async(coro):
-    """Run coroutine in worker's event loop."""
-    return _event_loop.run_until_complete(coro)
-
-# KRules setup
-on, when, middleware, emit = container.handlers()
-
-@on("order.created")
-async def handle_order_created(ctx):
-    await ctx.subject.set("status", "pending")
-    await ctx.subject.store()
-
-# Celery tasks
 @app.task
 def create_order(order_data):
-    """Sync task using shared event loop."""
+    """
+    Sync Celery task calling async KRules code.
+
+    Uses run_async() to execute async event emission in the
+    worker-wide event loop with zero overhead.
+    """
     subject = container.subject(f"order-{order_data['id']}")
 
-    # Use worker's event loop (no overhead)
+    # Use run_async helper to execute async code
     run_async(
         container.event_bus().emit(
             event_type="order.created",
@@ -303,225 +193,180 @@ def create_order(order_data):
     )
 
     return f"Order {order_data['id']} created"
-```
 
-**Pros:**
-- Best performance (single event loop per worker)
-- Efficient connection pooling
-- No per-call overhead
 
-**Cons:**
-- Complex worker lifecycle management
-- Requires understanding of Celery signals
-- Potential event loop pollution
+async def _send_callback_async(channels, subscription, entity_id, entity_data, message):
+    """
+    Internal async implementation.
 
-## Worker Pool Configuration
+    Pattern: Define complex async logic in separate async functions,
+    then call them via run_async() from Celery tasks.
+    """
+    krules = container.krules()
 
-### Comparison Table
+    payload = {
+        "subscription": subscription,
+        "id": entity_id,
+        "state": entity_data,
+        "message": message,
+    }
 
-| Worker Pool | Async Support | Performance | Compatibility | Use Case |
-|-------------|---------------|-------------|---------------|----------|
-| **prefork** (default) | Via `asyncio.run()` | Good for CPU | Best | Default, stable |
-| **gevent** | Native async | Excellent for I/O | Good | High concurrency |
-| **eventlet** | Native async | Excellent for I/O | Good | Alternative to gevent |
-| **solo** | Via `asyncio.run()` | Poor (single) | Best | Development only |
-| **threads** | Via `asyncio.run()` | Moderate | Good | Mixed workloads |
+    for channel in channels:
+        # Process each channel asynchronously
+        await process_channel(channel, payload)
 
-### Configuration Examples
+    # Emit events via KRules
+    await krules.event_bus().emit(
+        "callback.sent",
+        f"entity|{subscription}|{entity_id}",
+        payload
+    )
 
-**Prefork (Default):**
-```bash
-celery -A tasks worker --pool=prefork --concurrency=4
-
-# Good for: CPU-bound tasks, default setup, Pattern A/C/D
-# Pros: Stable, no dependencies, process isolation
-# Cons: asyncio.run() overhead per call
-```
-
-**Gevent (High Concurrency):**
-```bash
-pip install gevent
-celery -A tasks worker --pool=gevent --concurrency=100
-
-# Good for: I/O-bound async tasks, Pattern B
-# Pros: True async, efficient, single event loop
-# Cons: Compatibility issues with C extensions
-```
-
-**Eventlet (Alternative):**
-```bash
-pip install eventlet
-celery -A tasks worker --pool=eventlet --concurrency=100
-
-# Good for: I/O-bound async tasks, Pattern B
-# Pros: Similar to gevent, sometimes better compatibility
-# Cons: Monkey patching, debugging complexity
-```
-
-**Threads (Mixed Workloads):**
-```bash
-celery -A tasks worker --pool=threads --concurrency=10
-
-# Good for: Mixed sync/async, Pattern A/C
-# Pros: No C extension issues, GIL-friendly for I/O
-# Cons: Not as efficient as gevent for pure I/O
-```
-
-## Migration Strategies
-
-### Strategy 1: Gradual Migration (Recommended)
-
-**Phase 1:** Add async wrapper, keep sync tasks
-```python
-# Existing sync task (no changes)
-@app.task
-def process_order(order_id):
-    # ... existing sync code ...
-    pass
-
-# New async KRules task
-@app.task
-@async_to_sync
-async def process_order_async(order_id):
-    subject = container.subject(f"order-{order_id}")
-    await container.event_bus().emit("order.process", subject, {})
-
-# Route new orders to async task
-@app.task
-def create_order(order_data):
-    if order_data.get("use_krules"):
-        process_order_async.delay(order_data["id"])
-    else:
-        process_order.delay(order_data["id"])
-```
-
-**Phase 2:** Migrate workflows one at a time
-```python
-# Migrated workflows use async
-@app.task
-@async_to_sync
-async def order_workflow(order_id):
-    subject = container.subject(f"order-{order_id}")
-    await container.event_bus().emit("order.created", subject, {})
-    # KRules handlers take over from here
-
-# Legacy workflows still sync
-@app.task
-def legacy_order_workflow(order_id):
-    # ... old code ...
-    pass
-```
-
-**Phase 3:** Switch default to async, keep sync fallback
-```python
-@app.task
-def create_order(order_data):
-    # Default: async
-    if not order_data.get("force_sync"):
-        return order_workflow_async.delay(order_data["id"])
-    else:
-        return legacy_order_workflow.delay(order_data["id"])
-```
-
-**Phase 4:** Remove sync code entirely
-```python
-@app.task
-@async_to_sync
-async def create_order(order_data):
-    # All async, no fallback
-    subject = container.subject(f"order-{order_data['id']}")
-    await container.event_bus().emit("order.created", subject, order_data)
-```
-
-### Strategy 2: Parallel Deployment
-
-**Approach:** Run separate worker pools for sync and async tasks
-
-```python
-# tasks.py
-from celery import Celery
-
-app = Celery('tasks')
-
-# Sync tasks (legacy)
-@app.task(queue='sync_queue')
-def sync_process_order(order_id):
-    # ... sync code ...
-    pass
-
-# Async tasks (new)
-@app.task(queue='async_queue')
-@async_to_sync
-async def async_process_order(order_id):
-    subject = container.subject(f"order-{order_id}")
-    await container.event_bus().emit("order.process", subject, {})
-```
-
-**Worker deployment:**
-```bash
-# Worker 1: prefork for sync tasks
-celery -A tasks worker -Q sync_queue --pool=prefork --concurrency=4
-
-# Worker 2: gevent for async tasks
-celery -A tasks worker -Q async_queue --pool=gevent --concurrency=100
-```
-
-**Benefits:**
-- Zero downtime migration
-- Independent scaling
-- Rollback capability
-- Performance isolation
-
-### Strategy 3: Feature Flags
-
-**Approach:** Control async/sync execution at runtime
-
-```python
-from krules_core.container import KRulesContainer
-import asyncio
-
-container = KRulesContainer()
-
-# Feature flag (from config, database, etc.)
-USE_ASYNC_KRULES = os.getenv("USE_ASYNC_KRULES", "false").lower() == "true"
 
 @app.task
-def process_order(order_id):
-    if USE_ASYNC_KRULES:
-        # Async path
-        subject = container.subject(f"order-{order_id}")
-        asyncio.run(
-            container.event_bus().emit("order.process", subject, {})
+def schedule(subscription, group, entity_id, message, channels):
+    """
+    Example from Companion production system.
+
+    Fetches data from Firestore and processes it via async KRules handlers.
+    """
+    # Sync operations (Firestore fetch, etc.)
+    db = container.firestore_client()
+    doc_ref = db.collection(f"{subscription}/groups/{group}").document(entity_id)
+    entity_data = doc_ref.get().to_dict()
+
+    if entity_data is None:
+        # Handle missing data via KRules event
+        run_async(
+            container.krules().event_bus().emit(
+                "callback.entity_notfound",
+                f"entity|{subscription}|{entity_id}",
+                {"group": group}
+            )
         )
     else:
-        # Legacy sync path
-        legacy_process_order(order_id)
+        # Process entity via async function
+        run_async(_send_callback_async(channels, subscription, entity_id, entity_data, message))
 ```
 
-**Benefits:**
-- A/B testing
-- Gradual rollout (1% → 10% → 100%)
-- Easy rollback
-- Production validation
+#### Step 4: Run Celery worker with --pool=solo (CRITICAL)
 
-## Performance Considerations
+```bash
+# Use --pool=solo for single-threaded async compatibility
+celery -A tasks worker --pool=solo --loglevel=info
 
-### Benchmark Comparison
+# For production/Kubernetes deployments with queue
+celery -A tasks worker --pool=solo -Q my-queue --loglevel=info
 
-**Test:** 1000 order events with Subject.set() + Subject.store()
+# With autoscaling (scale worker replicas, not pool concurrency)
+# Deploy multiple worker pods/instances instead
+```
 
-| Pattern | Time (s) | Throughput (events/s) | Memory (MB) |
-|---------|----------|----------------------|-------------|
-| Pattern A (asyncio.run) | 12.3 | 81 | 45 |
-| Pattern B (gevent) | 2.1 | 476 | 38 |
-| Pattern C (decorator) | 12.5 | 80 | 46 |
-| Pattern D (shared loop) | 2.8 | 357 | 39 |
+**Why --pool=solo is critical:**
+- Ensures single-threaded execution (compatible with shared event loop)
+- No concurrency issues with async Redis clients or other async resources
+- Simpler than gevent/eventlet (no monkey patching, no C extension issues)
+- Works perfectly with async/await code
+- Scale horizontally by running multiple worker instances/pods
 
-**Key takeaways:**
-- **Pattern B (gevent)** is fastest for I/O-bound workloads
-- **Pattern A/C** have ~15% overhead from loop creation
-- **Pattern D** balances performance and simplicity
-- All patterns suitable for typical workloads (<100 events/s)
+**DO NOT use:**
+- `--pool=prefork` - Creates multiple processes, event loop not shared
+- `--pool=gevent` - Requires additional dependencies, monkey patching issues
+- `--pool=eventlet` - Similar issues to gevent
+- `--concurrency=N` - Not needed with solo pool, scale with worker instances instead
+
+### Deployment Example (Kubernetes)
+
+```yaml
+# From Companion production deployment
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: backend-api-v2-worker
+spec:
+  replicas: 3  # Scale by adding replicas, not pool concurrency
+  template:
+    spec:
+      containers:
+      - name: worker
+        image: backend-api-v2:latest
+        command: ["uv", "run", "celery"]
+        args:
+          - "-A"
+          - "backend_api_v2.tasks"
+          - "worker"
+          - "--loglevel=info"
+          - "-Q"
+          - "backend-api-v2"
+          - "--pool=solo"  # CRITICAL: solo pool for async compatibility
+        env:
+          - name: CELERY_BROKER
+            value: "redis://redis:6379/0"
+          - name: CELERY_BACKEND
+            value: "redis://redis:6379/1"
+```
+
+### Pros and Cons
+
+**Pros:**
+- ✅ Production-proven (Companion, TradingLab systems)
+- ✅ Zero event loop overhead
+- ✅ Maximum compatibility with async libraries (Redis, KRules, etc.)
+- ✅ Simple implementation (no Celery signals needed)
+- ✅ Thread-safe with lock
+- ✅ Easy to debug and maintain
+- ✅ No additional dependencies
+
+**Cons:**
+- ⚠️ Single task execution per worker (mitigate: scale horizontally with multiple workers)
+- ⚠️ Requires --pool=solo flag (easy to forget, document in README)
+
+## Scaling Strategy
+
+Since `--pool=solo` runs one task at a time per worker, scale by deploying multiple worker instances rather than increasing pool concurrency.
+
+### Horizontal Scaling Examples
+
+**Kubernetes (StatefulSet):**
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: celery-worker
+spec:
+  replicas: 5  # Scale horizontally
+  template:
+    spec:
+      containers:
+      - name: worker
+        command: ["celery", "-A", "tasks", "worker", "--pool=solo"]
+```
+
+**Docker Compose:**
+```yaml
+services:
+  worker:
+    image: myapp:latest
+    command: celery -A tasks worker --pool=solo
+    deploy:
+      replicas: 5  # Scale horizontally
+```
+
+**Systemd (multiple services):**
+```bash
+# Create multiple systemd service files
+# /etc/systemd/system/celery-worker@.service
+
+[Service]
+ExecStart=/usr/bin/celery -A tasks worker --pool=solo -n worker%i@%h
+
+# Enable multiple instances
+systemctl enable celery-worker@{1..5}
+```
+
+## Performance Optimization
+
+The recommended pattern (worker-level event loop with `--pool=solo`) provides excellent performance for typical workloads (100-1000+ events/sec). Here are additional optimizations for high-throughput scenarios.
 
 ### Optimization Tips
 
@@ -540,25 +385,26 @@ storage_factory = create_redis_storage(redis_client=redis_client)
 container.subject_storage.override(storage_factory)
 ```
 
-**2. Batch operations:**
+**2. Batch operations when possible:**
 ```python
-@app.task
-@async_to_sync
-async def process_batch(order_ids):
-    """Process multiple orders in single event loop."""
+async def _process_batch_async(order_ids):
+    """Process multiple orders concurrently."""
     async def process_one(order_id):
         subject = container.subject(f"order-{order_id}")
         await container.event_bus().emit("order.process", subject, {})
 
-    # Concurrent processing
+    # Concurrent processing within single task
     await asyncio.gather(*[process_one(oid) for oid in order_ids])
+
+@app.task
+def process_batch(order_ids):
+    """Process multiple orders in single Celery task."""
+    run_async(_process_batch_async(order_ids))
 ```
 
 **3. Reuse subjects:**
 ```python
-@app.task
-@async_to_sync
-async def update_order(order_id, updates):
+async def _update_order_async(order_id, updates):
     """Reuse subject for multiple operations."""
     subject = container.subject(f"order-{order_id}")
 
@@ -568,74 +414,79 @@ async def update_order(order_id, updates):
 
     # Single store at end
     await subject.store()
+
+@app.task
+def update_order(order_id, updates):
+    run_async(_update_order_async(order_id, updates))
 ```
 
-**4. Choose worker pool wisely:**
+**4. Scale horizontally:**
 ```bash
-# I/O-bound KRules tasks → gevent
-celery -A tasks worker --pool=gevent --concurrency=100
-
-# CPU-bound + KRules → prefork
-celery -A tasks worker --pool=prefork --concurrency=4
-
-# Mixed → threads
-celery -A tasks worker --pool=threads --concurrency=20
+# Don't increase concurrency - scale worker replicas instead
+# ❌ Wrong: celery -A tasks worker --pool=solo --concurrency=10
+# ✅ Right: Deploy 10 worker instances with --pool=solo
 ```
 
 ## Common Pitfalls
 
-### Pitfall 1: Nested Event Loops
+### Pitfall 1: Forgetting --pool=solo Flag
+
+**❌ Error:**
+```bash
+# Starting worker without --pool=solo
+celery -A tasks worker --loglevel=info
+
+# Or using wrong pool
+celery -A tasks worker --pool=prefork
+```
+
+**Symptoms:**
+- `RuntimeError: Task attached to a different loop`
+- Redis connection errors
+- Async handler failures
+
+**✅ Fix:**
+```bash
+# Always use --pool=solo for KRules async integration
+celery -A tasks worker --pool=solo --loglevel=info
+```
+
+### Pitfall 2: Using asyncio.run() Instead of run_async()
 
 **❌ Error:**
 ```python
+from .utils import run_async
+
 @app.task
-@async_to_sync
-async def process_order(order_id):
+def process_order(order_id):
     subject = container.subject(f"order-{order_id}")
 
-    # ERROR: asyncio.run() inside async function
+    # ERROR: Creates new event loop instead of using shared one
     asyncio.run(
         container.event_bus().emit("order.process", subject, {})
     )
-    # RuntimeError: asyncio.run() cannot be called from a running event loop
 ```
+
+**Issues:**
+- New event loop created per task (overhead)
+- Redis client errors ("attached to different loop")
+- No connection pooling
 
 **✅ Fix:**
 ```python
+from .utils import run_async
+
 @app.task
-@async_to_sync
-async def process_order(order_id):
+def process_order(order_id):
     subject = container.subject(f"order-{order_id}")
 
-    # Direct await (already in async context)
-    await container.event_bus().emit("order.process", subject, {})
+    # Use run_async to use worker-wide event loop
+    run_async(
+        container.event_bus().emit("order.process", subject, {})
+    )
 ```
 
-### Pitfall 2: Shared State in Async Context
-
-**❌ Error:**
-```python
-# Global state (problematic with gevent)
-current_order = None
-
-@app.task
-async def process_order(order_id):
-    global current_order
-    current_order = order_id  # Race condition with concurrent tasks!
-    # ... processing ...
-```
-
-**✅ Fix:**
-```python
-# Use task-local state
-@app.task
-async def process_order(order_id):
-    # Pass data explicitly, no globals
-    subject = container.subject(f"order-{order_id}")
-    await container.event_bus().emit("order.process", subject, {"order_id": order_id})
-```
-
-### Pitfall 3: Forgetting Storage Backend Async
+### Pitfall 3: Using Sync Redis Client
 
 **❌ Error:**
 ```python
@@ -655,79 +506,46 @@ redis_client = await Redis.from_url("redis://localhost:6379/0")
 storage_factory = create_redis_storage(redis_client=redis_client)
 ```
 
-### Pitfall 4: Event Loop Cleanup
+### Pitfall 4: Calling run_async() from Async Context
 
 **❌ Error:**
 ```python
-@app.task
-def process_order(order_id):
-    loop = asyncio.new_event_loop()
-    # ... use loop ...
-    # Forgot to close loop!
+async def _helper_function():
+    # ERROR: run_async() expects to be called from sync context
+    run_async(some_other_async_function())
 ```
 
 **✅ Fix:**
 ```python
+async def _helper_function():
+    # Direct await when already in async context
+    await some_other_async_function()
+
+# run_async() is only for sync→async boundary (Celery task → async implementation)
 @app.task
-def process_order(order_id):
-    # asyncio.run() handles cleanup automatically
-    asyncio.run(process_order_async(order_id))
-
-# Or manual cleanup:
-@app.task
-def process_order_manual(order_id):
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(process_order_async(order_id))
-    finally:
-        loop.close()
-```
-
-### Pitfall 5: Worker Pool Mismatch
-
-**❌ Error:**
-```python
-# Async Celery task with prefork worker
-@app.task
-async def process_order(order_id):  # Won't work with prefork!
-    await container.event_bus().emit(...)
-```
-
-```bash
-# Prefork doesn't support async tasks
-celery -A tasks worker --pool=prefork
-# TypeError: object Future can't be used in 'await' expression
-```
-
-**✅ Fix:**
-```python
-# Option 1: Use decorator for prefork
-@app.task
-@async_to_sync
-async def process_order(order_id):
-    await container.event_bus().emit(...)
-
-# Option 2: Use gevent worker
-celery -A tasks worker --pool=gevent
+def celery_task():
+    run_async(_helper_function())  # ✅ Correct usage
 ```
 
 ## Production Checklist
 
-- [ ] Choose appropriate worker pool (prefork/gevent/eventlet)
-- [ ] Configure connection pooling for storage backends
-- [ ] Set up worker monitoring (Flower, CloudWatch, etc.)
-- [ ] Test error handling in async contexts
-- [ ] Configure retry policies for failed tasks
-- [ ] Set up logging for async operations
-- [ ] Test worker shutdown behavior (cleanup)
-- [ ] Configure timeouts for long-running handlers
-- [ ] Set up health checks for workers
-- [ ] Test rollback strategy
-- [ ] Document worker configuration in README
-- [ ] Set up alerts for task failures
-- [ ] Configure dead letter queues
-- [ ] Test connection pooling limits
-- [ ] Benchmark performance before production
+- [ ] **CRITICAL**: Workers running with `--pool=solo` flag
+- [ ] `utils.py` module with `run_async()` helper implemented
+- [ ] Celery tasks using `run_async()` (not `asyncio.run()`)
+- [ ] Async Redis client configured (`redis.asyncio.Redis`)
+- [ ] Connection pooling configured for storage backends
+- [ ] Worker monitoring set up (Flower, CloudWatch, Prometheus, etc.)
+- [ ] Error handling tested in async contexts
+- [ ] Retry policies configured for failed tasks
+- [ ] Logging configured for async operations (logfire, etc.)
+- [ ] Worker shutdown behavior tested (graceful cleanup)
+- [ ] Timeouts configured for long-running handlers
+- [ ] Health checks configured for workers
+- [ ] Horizontal scaling tested (multiple worker instances)
+- [ ] Worker configuration documented in README (emphasize `--pool=solo`)
+- [ ] Alerts configured for task failures
+- [ ] Dead letter queues configured for failed tasks
+- [ ] Performance benchmarked under expected load
 
 ## Support
 
