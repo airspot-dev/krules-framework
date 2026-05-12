@@ -232,25 +232,14 @@ def create_redis_storage(redis_client, redis_prefix: str = ""):
     Returns:
         Callable that creates SubjectsRedisStorage instances
 
-    Note:
-        The returned factory accepts:
-        - name (positional): subject name
-        - event_info, event_data (kwargs): ignored, accepted for compatibility
-
     Example:
         >>> client = await create_redis_client("redis://localhost:6379/0")
         >>> storage_factory = create_redis_storage(client, redis_prefix="myapp:")
         >>> storage = storage_factory("user-123")
     """
 
-    def storage_factory(name, **kwargs):
-        """
-        Create Redis storage instance for a subject.
-
-        Args:
-            name: Subject name (positional)
-            **kwargs: Ignored (event_info, event_data, etc.)
-        """
+    def storage_factory(name):
+        """Create Redis storage instance for a subject."""
         return SubjectsRedisStorage(
             subject=name,
             redis_client=redis_client,

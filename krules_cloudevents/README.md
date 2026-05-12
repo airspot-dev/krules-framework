@@ -198,23 +198,7 @@ dispatcher.dispatch(
 
 ## Event Chain Tracking
 
-The `originid` attribute tracks event chains across services:
-
-```python
-# Service A: Original event
-subject = container.subject("order-123")
-await emit("order.created", subject, {"amount": 100})
-# originid = <event-id>
-
-# Service B: Receives event, emits new event
-@on("order.created")
-async def handle_order(ctx: EventContext):
-    # ctx.subject preserves event_info with originid
-    await ctx.emit("payment.process", payload, ctx.subject)
-    # originid = <original-event-id>  # Preserved!
-```
-
-**Note**: `event_info` currently resides in Subject but should be moved to event context. See TODO in code.
+Each dispatched event carries an `originid` CloudEvents extension attribute, set to the event's own ID. Cross-event chain correlation (propagating the originating request ID through downstream events) is not currently provided by the framework and will be introduced via a dedicated mechanism in a future release.
 
 ## Multi-Service Example
 

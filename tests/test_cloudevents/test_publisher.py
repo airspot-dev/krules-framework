@@ -106,38 +106,8 @@ class TestCloudEventsDispatcher:
             assert headers["ce-type"] == "order.created"
             assert headers["ce-subject"] == "order-456"
 
-    def test_dispatch_preserves_originid(self, container, mock_http_url):
-        """Test that originid is preserved from event_info."""
-        dispatcher = CloudEventsDispatcher(
-            dispatch_url=mock_http_url,
-            source="test-service",
-            krules_container=container,
-        )
-
-        # Create subject with event_info containing originid
-        subject = container.subject(
-            "test-subject",
-            event_info={"originid": "original-event-id-123"}
-        )
-
-        with patch("httpx.post") as mock_post:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_post.return_value = mock_response
-
-            dispatcher.dispatch(
-                event_type="test.event",
-                subject=subject,
-                payload={"data": "test"},
-            )
-
-            # Verify originid header
-            call_kwargs = mock_post.call_args.kwargs
-            headers = call_kwargs["headers"]
-            assert headers["ce-originid"] == "original-event-id-123"
-
-    def test_dispatch_creates_originid_if_missing(self, container, mock_http_url):
-        """Test that originid is set to event ID if not in event_info."""
+    def test_dispatch_sets_originid_to_event_id(self, container, mock_http_url):
+        """Test that originid equals the freshly generated event ID."""
         dispatcher = CloudEventsDispatcher(
             dispatch_url=mock_http_url,
             source="test-service",

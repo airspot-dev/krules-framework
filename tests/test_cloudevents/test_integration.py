@@ -287,40 +287,6 @@ class TestCloudEventsIntegration:
         assert dispatched_events[0] == "inventory.check"
 
     @pytest.mark.asyncio
-    async def test_originid_preserved_across_events(self, container):
-        """Test that originid is preserved through event chain."""
-        dispatcher = CloudEventsDispatcher(
-            dispatch_url="https://api.example.com/events",
-            source="test-service",
-            krules_container=container,
-        )
-
-        # Create subject with originid
-        subject = container.subject(
-            "chain-subject",
-            event_info={"originid": "root-event-123"}
-        )
-
-        with patch("httpx.post") as mock_post:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_post.return_value = mock_response
-
-            # Dispatch event
-            event_id = dispatcher.dispatch(
-                event_type="test.event",
-                subject=subject,
-                payload={"data": "test"},
-            )
-
-            # Verify originid in headers
-            call_kwargs = mock_post.call_args.kwargs
-            headers = call_kwargs["headers"]
-            assert headers["ce-originid"] == "root-event-123"
-            assert headers["ce-id"] == event_id
-            assert headers["ce-id"] != headers["ce-originid"]  # Different IDs
-
-    @pytest.mark.asyncio
     async def test_extended_properties_in_dispatch(self, container):
         """Test that subject extended properties are dispatched."""
         dispatcher = CloudEventsDispatcher(

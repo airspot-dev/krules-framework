@@ -183,7 +183,7 @@ from dependency_injector import providers
 
 # Define custom storage factory
 def create_custom_storage():
-    def factory(name, event_info=None, event_data=None):
+    def factory(name):
         return MyCustomStorage(name)
     return factory
 

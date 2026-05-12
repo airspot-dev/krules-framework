@@ -311,7 +311,7 @@ Implement the storage interface to create custom backends:
 
 ```python
 class CustomStorage:
-    def __init__(self, subject_name, event_info=None, event_data=None):
+    def __init__(self, subject_name):
         self._subject = subject_name
 
     def load(self):

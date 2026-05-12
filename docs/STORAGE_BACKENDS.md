@@ -8,7 +8,7 @@ All storage backends implement a common interface:
 
 ```python
 class SubjectStorage:
-    def __init__(self, subject_name, event_info=None, event_data=None):
+    def __init__(self, subject_name):
         """Initialize storage for a subject"""
         pass
 
@@ -199,7 +199,7 @@ import sqlite3
 import json
 
 class SQLiteSubjectStorage:
-    def __init__(self, subject_name, db_path="subjects.db", event_info=None, event_data=None):
+    def __init__(self, subject_name, db_path="subjects.db"):
         self._subject = subject_name
         self._db_path = db_path
         self._init_db()
@@ -356,8 +356,8 @@ from krules_core.container import KRulesContainer
 
 def create_sqlite_storage(db_path="subjects.db"):
     """Factory function for SQLite storage"""
-    def factory(name, event_info=None, event_data=None):
-        return SQLiteSubjectStorage(name, db_path, event_info, event_data)
+    def factory(name):
+        return SQLiteSubjectStorage(name, db_path)
     return factory
 
 # Create container
@@ -411,11 +411,11 @@ Use different storage for different subjects:
 ```python
 def create_hybrid_storage(default_storage, special_storage, special_prefix):
     """Route subjects to different storage backends"""
-    def factory(name, event_info=None, event_data=None):
+    def factory(name):
         if name.startswith(special_prefix):
-            return special_storage(name, event_info, event_data)
+            return special_storage(name)
         else:
-            return default_storage(name, event_info, event_data)
+            return default_storage(name)
     return factory
 
 # Route "cache-*" subjects to in-memory, others to Redis

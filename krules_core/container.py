@@ -52,7 +52,7 @@ class KRulesContainer(containers.DeclarativeContainer):
 
     # Subject Storage Factory
     # This is a CALLABLE that creates storage instances (not a storage instance itself)
-    # Subject.__init__ calls: storage(name, event_info, event_data)
+    # Subject.__init__ calls: storage(name)
     # Default: create_empty_storage() factory function (for testing/development)
     # Override with callable for production (Redis example):
     #   from redis_subjects_storage.storage_impl import create_redis_storage

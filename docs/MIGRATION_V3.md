@@ -58,7 +58,6 @@ await user.store()  # async
 - `await subject.dict()`
 
 **Still sync (no await):**
-- `subject.event_info()` - metadata access only
 - `str(subject)` - returns subject name
 - `repr(subject)` - returns `Subject<name>`
 

@@ -418,16 +418,3 @@ class TestCreatePostgresStorage:
         assert storage._subject == "subject-123"
         assert storage._pool == postgres_pool
 
-    async def test_factory_ignores_extra_kwargs(self, postgres_pool):
-        """Factory should accept but ignore event_info and event_data kwargs."""
-        factory = create_postgres_storage(pool=postgres_pool)
-
-        # Should not raise even with extra kwargs
-        storage = factory(
-            "subject-456",
-            event_info={"id": "evt-1"},
-            event_data={"payload": "data"}
-        )
-
-        assert isinstance(storage, SubjectsPostgresStorage)
-        assert storage._subject == "subject-456"

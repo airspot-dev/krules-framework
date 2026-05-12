@@ -415,24 +415,13 @@ def create_postgres_storage(pool):
     Returns:
         Callable that creates SubjectsPostgresStorage instances
 
-    Note:
-        The returned factory accepts:
-        - name (positional): subject name
-        - event_info, event_data (kwargs): ignored, accepted for compatibility
-
     Example:
         >>> pool = await create_postgres_pool("postgresql://localhost/krules")
         >>> storage_factory = create_postgres_storage(pool)
         >>> storage = storage_factory("user-123")
     """
-    def storage_factory(name, **kwargs):
-        """
-        Create PostgreSQL storage instance for a subject.
-
-        Args:
-            name: Subject name (positional)
-            **kwargs: Ignored (event_info, event_data, etc.)
-        """
+    def storage_factory(name):
+        """Create PostgreSQL storage instance for a subject."""
         return SubjectsPostgresStorage(
             subject=name,
             pool=pool

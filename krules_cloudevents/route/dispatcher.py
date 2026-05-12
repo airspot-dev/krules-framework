@@ -51,7 +51,6 @@ class CloudEventsDispatcher(BaseDispatcher):
 
         if isinstance(subject, str):
             subject = subject_factory(subject)
-        _event_info = subject.event_info()
 
         _id = str(uuid.uuid4())
         logging.debug("new event id: {}".format(_id))
@@ -71,7 +70,7 @@ class CloudEventsDispatcher(BaseDispatcher):
             ext_props.update({"propertyname": property_name})
         ext_props.update(kwargs)
         event.SetExtensions(ext_props)
-        event.Set('Originid', str(_event_info.get("originid", _id)))
+        event.Set('Originid', _id)
         event.SetData(payload)
 
         m = marshaller.NewHTTPMarshaller([binary.NewBinaryHTTPCloudEventConverter()])

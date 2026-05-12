@@ -157,26 +157,18 @@ class PubSubSubscriber:
             cloud_event = self._create_cloud_event(message)
 
             # Extract event components
-            event_info = cloud_event.get_attributes()
-            event_data = cloud_event.get_data()
-            subject_name = event_info.get("subject")
-            event_type = event_info.get("type")
+            attributes = cloud_event.get_attributes()
+            payload = cloud_event.get_data()
+            subject_name = attributes.get("subject")
+            event_type = attributes.get("type")
 
             self.logger.debug(f"Processing event: {event_type} for subject: {subject_name}")
 
             # Create subject with injected factory
-            subject = self.subject_factory(
-                subject_name,
-                event_info=event_info,
-                event_data=event_data
-            )
-
-            # Store event_info in payload for backward compatibility
-            if isinstance(event_data, dict):
-                event_data["_event_info"] = dict(event_info)
+            subject = self.subject_factory(subject_name)
 
             # Emit on local EventBus - triggers @on handlers transparently
-            await self.event_bus.emit(event_type, subject, event_data)
+            await self.event_bus.emit(event_type, subject, payload)
 
             # Acknowledge successful processing
             message.ack()

@@ -213,17 +213,3 @@ class TestSubjectRedisIntegration:
         # (cache was cleared after store())
         assert await subject1.get("cached_prop") == "updated"
 
-    async def test_subject_with_event_info(self, redis_subject_factory):
-        """Subject should handle event_info with Redis storage."""
-        subject = redis_subject_factory(
-            "event-subject",
-            event_info={"id": "evt-123", "type": "test.event"}
-        )
-
-        # Set properties
-        await subject.set("processed", True)
-        await subject.store()  # Persist to Redis
-
-        # Verify storage works regardless of event_info
-        subject2 = redis_subject_factory("event-subject")
-        assert await subject2.get("processed") is True

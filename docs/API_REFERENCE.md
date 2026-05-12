@@ -20,14 +20,12 @@ Dependency injection container managing all KRules components.
 
 **Methods:**
 
-#### `subject(name: str, event_info=None, event_data=None) -> Subject`
+#### `subject(name: str) -> Subject`
 
 Create or retrieve a subject.
 
 **Parameters:**
 - `name` (str): Subject identifier
-- `event_info` (dict, optional): Event information context
-- `event_data` (any, optional): Event data context
 
 **Returns:** Subject instance
 
@@ -65,7 +63,7 @@ Dynamic entity with reactive properties.
 
 **Constructor:**
 
-#### `__init__(name, storage, event_bus, event_info=None, event_data=None, use_cache_default=True)`
+#### `__init__(name, storage, event_bus, use_cache_default=True)`
 
 Initialize a Subject.
 
@@ -73,8 +71,6 @@ Initialize a Subject.
 - `name` (str): Subject name/identifier
 - `storage`: Storage factory provider
 - `event_bus`: EventBus instance
-- `event_info` (dict, optional): Event information dictionary
-- `event_data` (any, optional): Event data
 - `use_cache_default` (bool): Default caching behavior (default: True)
 
 **Note:** Direct instantiation is not recommended. Use `KRulesContainer.subject()` instead.

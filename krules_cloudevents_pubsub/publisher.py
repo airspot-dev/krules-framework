@@ -135,7 +135,6 @@ class CloudEventsDispatcher(BaseDispatcher):
         #with logfire.span("PubSub Dispatcher", event=event_type, subject=subject, payload=payload, extra=extra):
         if isinstance(subject, str):
             subject = self._krules.subject(subject)
-        _event_info = subject.event_info()
 
         _topic_id = self._topic_id
         if "topic" in extra:
@@ -157,7 +156,7 @@ class CloudEventsDispatcher(BaseDispatcher):
         property_name = payload.get(PayloadConst.PROPERTY_NAME, None)
         if property_name is not None:
             ext_props.update({"propertyname": property_name})
-        ext_props['originid'] = str(_event_info.get("originid", _id))
+        ext_props['originid'] = _id
         ext_props["ce-type"] = event_type
         dataschema = extra.pop("dataschema", None)
         exception_handler = extra.pop("exception_handler", None)

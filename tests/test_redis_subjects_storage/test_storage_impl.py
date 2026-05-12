@@ -345,19 +345,3 @@ class TestCreateRedisStorage:
         assert storage._subject == "subject-123"
         assert storage._key_prefix == "test:"
 
-    async def test_factory_ignores_extra_kwargs(self, redis_client):
-        """Factory should accept but ignore event_info and event_data kwargs."""
-        factory = create_redis_storage(
-            redis_client=redis_client,
-            redis_prefix="test:"
-        )
-
-        # Should not raise even with extra kwargs
-        storage = factory(
-            "subject-456",
-            event_info={"id": "evt-1"},
-            event_data={"payload": "data"}
-        )
-
-        assert isinstance(storage, SubjectsRedisStorage)
-        assert storage._subject == "subject-456"

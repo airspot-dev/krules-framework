@@ -26,7 +26,7 @@ class Subject:
         await user.store()
     """
 
-    def __init__(self, name, storage, event_bus, event_info=None, event_data=None, use_cache_default=True):
+    def __init__(self, name, storage, event_bus, use_cache_default=True):
         """
         Initialize a Subject.
 
@@ -34,8 +34,6 @@ class Subject:
             name: Subject name/identifier
             storage: Storage factory provider (REQUIRED - use KRulesContainer.subject())
             event_bus: EventBus instance (REQUIRED - use KRulesContainer.subject())
-            event_info: Event information dictionary
-            event_data: Event data
             use_cache_default: Whether to use caching by default (default: True)
 
         Note:
@@ -55,8 +53,7 @@ class Subject:
 
         self.name = name
         self._use_cache = use_cache_default
-        self._storage = storage(name, event_info=event_info or {}, event_data=event_data)
-        self._event_info = event_info or {}
+        self._storage = storage(name)
         self._cached = None
         self._event_bus = event_bus
 
@@ -539,10 +536,6 @@ class Subject:
             await self._load()
 
         return self._cached[PropertyType.EXTENDED]["values"].copy()
-
-    def event_info(self):
-        """Get event information dict (sync - no storage access)."""
-        return self._event_info.copy()
 
     async def store(self):
         """

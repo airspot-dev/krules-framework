@@ -52,7 +52,6 @@ class CloudEventsDispatcher:
     - Modern CloudEvents v1.x with Pydantic models
     - Container-first dependency injection
     - Async HTTP via httpx
-    - Preserves originid for event chain tracking
     - Supports extended properties and subject metadata
     - Dynamic dispatch URL (static string or callable)
 
@@ -157,11 +156,6 @@ class CloudEventsDispatcher:
         if isinstance(subject, str):
             subject = self._krules.subject(subject)
 
-        # TODO: event_info should not be in Subject - it should be an event context
-        # for tracking event chains. This architectural issue needs review.
-        # For now, we preserve existing logic for backward compatibility.
-        _event_info = subject.event_info()
-
         # Generate event ID
         _id = str(uuid.uuid4())
         logger.debug(f"Creating CloudEvent with id={_id}, type={event_type}")
@@ -174,9 +168,7 @@ class CloudEventsDispatcher:
         if property_name is not None:
             ext_props["propertyname"] = property_name
 
-        # Add originid for event chain tracking
-        # Preserve originid from event_info if exists, otherwise use current event ID
-        ext_props["originid"] = str(_event_info.get("originid", _id))
+        ext_props["originid"] = _id
 
         # Merge extra kwargs into extensions
         # Filter out special kwargs that aren't CloudEvent extensions
