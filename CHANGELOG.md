@@ -5,6 +5,38 @@ All notable changes to KRules Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-07-09
+
+### ✨ Added
+
+- **`origin_id` — transparent event-chain tracking**
+  - Introduced a first-class `origin_id` that identifies an entire event chain (the causal sequence of events triggered by a single originating request) and propagates it transparently across the async chain and, via the `originid` CloudEvent extension, across process/transport boundaries.
+  - New module `krules_core/origin.py` with a module-level `ContextVar` and public API:
+    - `get_origin_id()` — read the current chain id
+    - `origin_id_scope(value=None)` — context manager (token-based reset) that seeds an explicit id or auto-generates a UUID root when none is given
+    - lower-level `generate_origin_id()`, `set_origin_id`/`reset_origin_id`
+  - `EventContext` gained a typed `origin_id` field. `EventBus.emit()` opens a fresh root scope when no chain is active — so implicit events (`Subject.set()`/`delete()`) and nested `ctx.emit()` inherit the same id with no manual threading — and inherits without resetting when a chain is already active.
+  - CloudEvents publishers (HTTP and PubSub) emit the chain's `origin_id` as the `originid` extension, decoupled from the per-message CloudEvent `id` (falls back to the message id only outside any active chain).
+  - Inbound edges re-seed the chain: the PubSub subscriber and the FastAPI CloudEvents receiver extract the incoming `originid` and open an `origin_id_scope()` per message before emitting locally.
+  - Propagation is built on `contextvars` (task-local, inherited across `await`, isolated between concurrent tasks) with no external dependency. Chain identity lives in the event context, never on the Subject.
+
+### ♻️ Changed
+
+- Removed the legacy `event_info` and `event_data` parameters from the `Subject` API and surrounding code (constructor params, `_event_info` field, `event_info()` method). These were stored on the Subject but never persisted, and chain tracking now belongs to the event context. Storage factory signatures (`empty_storage`, `redis_subjects_storage`, `postgres_subjects_storage`) were simplified accordingly.
+
+### 📝 Documentation
+
+- Added `krules_core.origin` API section and `EventContext.origin_id` attribute to the API reference; added a "Chain tracking" subsection to Core Concepts.
+- Fixed the Celery integration docs with a production-proven pattern.
+
+### 🧪 Testing
+
+- Added `tests/test_core_v2/test_origin_id.py`: concurrent-chain isolation, implicit inheritance via `ctx.emit()` and `Subject.set()`, independent roots for sequential top-level emits, no leakage after scope exit, and absence of any Subject surface. Verified end-to-end against real Google Cloud Pub/Sub.
+
+### ⚠️ Known Limitations
+
+- The HTTP CloudEvents dispatcher is a sync `def` that calls the async `subject.get_ext_props()` without awaiting it; making it async is separate work.
+
 ## [3.1.1] - 2025-11-10
 
 ### 🐛 Bug Fixes
