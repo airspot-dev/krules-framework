@@ -232,6 +232,7 @@ Context passed to handlers.
 - `event_type` (str): Event type
 - `subject` (Subject): Subject instance
 - `payload` (dict): Event payload
+- `origin_id` (str | None): Identifier of the **event chain** this event belongs to. Populated for every emitted event and propagated implicitly across the chain. See [origin_id](#krules_coreorigin).
 - `extra` (dict | None): Extra context dict passed from set()/delete() operations
 - `property_name` (str | None): Property name (for property change events)
 - `old_value` (Any | None): Old value (for property change events)
@@ -252,6 +253,53 @@ Get metadata value.
 Set metadata value.
 
 **See:** [Event Handlers](EVENT_HANDLERS.md)
+
+---
+
+## krules_core.origin
+
+Transparent `origin_id` propagation across event chains. An **origin_id** identifies an event chain: the whole causal sequence of events triggered, directly or indirectly, by a single originating request.
+
+**Guarantees:**
+- **Implicit by default** — every event emitted within a chain inherits the same `origin_id` automatically, including implicit events (`subject-property-changed`, `subject-property-deleted`, `subject-deleted`) produced by `Subject.set()` / `Subject.delete()`, and events emitted with `ctx.emit()`. Callers never thread it manually.
+- **Explicit when needed** — an entry point can pin a specific `origin_id` (e.g. from an incoming request), or let one be auto-generated.
+- **Concurrency-safe** — built on `contextvars.ContextVar`, so concurrent asyncio tasks (independent chains) each carry their own `origin_id` with no cross-contamination.
+- **Decoupled from Subject** — the `origin_id` belongs to the chain, not to any Subject. `Subject` exposes no `origin_id` surface.
+
+On the wire it maps to the `originid` CloudEvent extension attribute: publishers emit it, and the PubSub subscriber / FastAPI CloudEvents receiver extract it and re-seed the chain on the receiving side.
+
+#### `get_origin_id() -> str | None`
+
+Return the `origin_id` of the chain active in the current context, or `None` if no chain is active. Read this to surface the id, or to **serialize** it when a chain must cross a boundary the ContextVar cannot traverse (a message broker, a scheduler, a datastore) — the receiving side re-seeds it via `origin_id_scope`.
+
+#### `origin_id_scope(value: str | None = None) -> ContextManager[str]`
+
+Establish (or resume) a chain scope for the duration of a `with` block. If `value` is `None`, a new `origin_id` is generated (a new chain root); pass an incoming `originid` to continue a remote chain. The previous value is restored on exit, so nested scopes, sequential scopes, and concurrent tasks stay isolated. Yields the active `origin_id`.
+
+```python
+from krules_core.origin import origin_id_scope, get_origin_id
+
+# Entry point: seed from an incoming CloudEvent, or auto-generate a root
+with origin_id_scope(incoming_originid):   # None -> new root
+    await event_bus.emit(event_type, subject, payload)
+
+# Read the current chain id (e.g. to persist / serialize across a boundary)
+root = get_origin_id()
+
+# Re-seed on the far side of a broker / scheduler boundary
+with origin_id_scope(serialized_root):
+    await dispatch(...)
+```
+
+`EventBus.emit()` opens a fresh scope automatically when no chain is active, so a plain top-level `emit()` already gets its own auto-generated root — you only need `origin_id_scope` explicitly at entry points that receive an id from outside, or to bridge a boundary the ContextVar cannot cross.
+
+#### `generate_origin_id() -> str`
+
+Mint a new `origin_id` (UUID4 string) for a brand-new chain root.
+
+#### `set_origin_id(value: str) -> Token` / `reset_origin_id(token: Token) -> None`
+
+Lower-level set/reset pair for cases where a `with` block does not fit. Prefer `origin_id_scope`.
 
 ---
 

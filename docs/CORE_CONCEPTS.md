@@ -200,6 +200,19 @@ payment.completed
 order.fulfilled
 ```
 
+### Chain tracking with `origin_id`
+
+Every event in a cascade belongs to the same **event chain** — the causal sequence rooted at the originating event. KRules tags that chain with an `origin_id` and propagates it **implicitly**: every event in the cascade above (including the implicit `subject-property-changed` from `ctx.subject.set()`) carries the same `origin_id`, readable as `ctx.origin_id`, with no manual threading.
+
+```python
+@on("order.created")
+async def validate_order(ctx):
+    logfire.info("handling", origin_id=ctx.origin_id)  # same id across the whole cascade
+    await ctx.emit("payment.required")                 # inherits ctx.origin_id automatically
+```
+
+Propagation is built on `contextvars`, so concurrent chains stay isolated (each incoming request gets its own `origin_id`). When a chain crosses a process/transport boundary via CloudEvents, the id travels as the `originid` extension attribute and is re-seeded on the receiving side. An entry point that receives an id from outside — or that needs to bridge a boundary `contextvars` cannot cross (a message broker, a scheduler) — uses `origin_id_scope()` / `get_origin_id()`. See [origin_id in the API reference](API_REFERENCE.md#krules_coreorigin).
+
 ## Container (Dependency Injection)
 
 The **KRulesContainer** manages dependencies using dependency injection.
