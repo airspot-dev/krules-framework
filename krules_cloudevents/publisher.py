@@ -27,6 +27,7 @@ import httpx
 from cloudevents.pydantic import CloudEvent
 
 from krules_core.subject import PayloadConst
+from krules_core.origin import get_origin_id
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +169,10 @@ class CloudEventsDispatcher:
         if property_name is not None:
             ext_props["propertyname"] = property_name
 
-        ext_props["originid"] = _id
+        # originid carries the chain's origin_id (the whole causal sequence),
+        # distinct from the per-message CloudEvent id. Falls back to the fresh
+        # message id only when dispatched outside any active chain.
+        ext_props["originid"] = get_origin_id() or _id
 
         # Merge extra kwargs into extensions
         # Filter out special kwargs that aren't CloudEvent extensions

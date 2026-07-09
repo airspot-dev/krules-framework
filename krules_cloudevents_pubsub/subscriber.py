@@ -30,6 +30,8 @@ from datetime import datetime
 from google.cloud import pubsub_v1
 from cloudevents.http import CloudEvent
 
+from krules_core.origin import origin_id_scope
+
 
 class PubSubSubscriber:
     """
@@ -161,14 +163,21 @@ class PubSubSubscriber:
             payload = cloud_event.get_data()
             subject_name = attributes.get("subject")
             event_type = attributes.get("type")
+            origin_id = attributes.get("originid")
 
             self.logger.debug(f"Processing event: {event_type} for subject: {subject_name}")
 
             # Create subject with injected factory
             subject = self.subject_factory(subject_name)
 
-            # Emit on local EventBus - triggers @on handlers transparently
-            await self.event_bus.emit(event_type, subject, payload)
+            # Continue the remote chain: seed the origin_id from the incoming
+            # originid extension (or mint a new root if absent) so events emitted
+            # locally inherit it. Each message is scoped independently — the
+            # queue processor is a single task, so without this reset chains
+            # would leak across messages.
+            with origin_id_scope(origin_id):
+                # Emit on local EventBus - triggers @on handlers transparently
+                await self.event_bus.emit(event_type, subject, payload)
 
             # Acknowledge successful processing
             message.ack()

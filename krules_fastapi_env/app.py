@@ -36,6 +36,7 @@ from fastapi import FastAPI
 from cloudevents.pydantic import CloudEvent
 
 from krules_core.container import KRulesContainer
+from krules_core.origin import origin_id_scope
 
 
 class KrulesApp(FastAPI):
@@ -115,11 +116,17 @@ class KrulesApp(FastAPI):
             # Create Subject instance (like PubSub subscriber does)
             subject = self._krules.subject(event.subject)
 
+            # Continue the remote chain: seed origin_id from the incoming
+            # originid CloudEvent extension (or mint a new root if absent) so
+            # events emitted locally inherit it.
+            origin_id = event.get("originid")
+
             # Emit event on EventBus with Subject instance
-            await self._krules.event_bus().emit(
-                event_type=event.type,
-                subject=subject,
-                payload=event.data or {}
-            )
+            with origin_id_scope(origin_id):
+                await self._krules.event_bus().emit(
+                    event_type=event.type,
+                    subject=subject,
+                    payload=event.data or {}
+                )
 
             return {"status": "accepted"}

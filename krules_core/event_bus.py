@@ -22,6 +22,7 @@ import logging
 from typing import Callable, Any, Optional, List
 from dataclasses import dataclass
 from krules_core.subject.storaged_subject import Subject
+from krules_core.origin import get_origin_id, origin_id_scope
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,9 @@ class EventContext:
         event_type: Type of the event (e.g., "user.login")
         subject: Subject instance
         payload: Event payload dictionary
+        origin_id: Identifier of the event chain this event belongs to (the
+            causal sequence rooted at a single originating request). Populated
+            for every emitted event; propagates implicitly across the chain.
         extra: Extra context passed from set()/delete() operations
         property_name: Property name (for property change events)
         old_value: Previous value (for property change events)
@@ -45,6 +49,7 @@ class EventContext:
     subject: str | Subject
     payload: dict
     _event_bus: 'EventBus'
+    origin_id: Optional[str] = None
     extra: Optional[dict] = None
     property_name: Optional[str] = None
     old_value: Optional[Any] = None
@@ -234,10 +239,29 @@ class EventBus:
             await event_bus.emit("alert.critical", device, {}, extra={"reason": "high_temp"})
             await event_bus.emit("alert.critical", device, {}, topic="alerts")
         """
+        # Resolve the chain's origin_id. If no chain is active in the current
+        # context this is a top-level emit: open a fresh root scope for its
+        # duration so implicit events (Subject.set/delete) and nested emits
+        # inherit the same id transparently. If a chain is already active
+        # (nested emit, or an entry point that opened origin_id_scope), inherit
+        # it without resetting.
+        if get_origin_id() is None:
+            with origin_id_scope() as origin_id:
+                await self._run_handlers(
+                    event_type, subject, payload, origin_id, extra, kwargs
+                )
+        else:
+            await self._run_handlers(
+                event_type, subject, payload, get_origin_id(), extra, kwargs
+            )
+
+    async def _run_handlers(self, event_type, subject, payload, origin_id, extra, kwargs):
+        """Build the EventContext and dispatch to all matching handlers."""
         ctx = EventContext(
             event_type=event_type,
             subject=subject,
             payload=payload,
+            origin_id=origin_id,
             extra=extra,
             _event_bus=self  # Pass self for container-aware ctx.emit()
         )
