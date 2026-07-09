@@ -18,6 +18,7 @@ from pprint import pprint
 from cloudevents.pydantic import CloudEvent
 from google.cloud import pubsub_v1
 
+from krules_core.origin import get_origin_id
 from krules_core.route.dispatcher import BaseDispatcher
 from krules_core.subject import PayloadConst
 
@@ -103,7 +104,12 @@ class CloudEventsDispatcher(BaseDispatcher):
         property_name = payload.get(PayloadConst.PROPERTY_NAME, None)
         if property_name is not None:
             ext_props.update({"propertyname": property_name})
-        ext_props['originid'] = _id
+        # originid carries the chain's origin_id (the whole causal sequence),
+        # distinct from the per-message CloudEvent id. Falls back to the fresh
+        # message id only when dispatched outside any active chain. Mirrors the
+        # publisher; without this the dispatch path (used by outbound channels)
+        # would always mint a fresh root and break chain correlation.
+        ext_props['originid'] = get_origin_id() or _id
         ext_props["ce-type"] = event_type
         dataschema = extra.pop("dataschema", None)
         exception_handler = extra.pop("exception_handler", None)

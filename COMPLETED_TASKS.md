@@ -32,3 +32,20 @@ Introduced a first-class `origin_id` that identifies an event chain — the whol
 - Tests (`tests/test_core_v2/test_origin_id.py`): concurrent-chain isolation, implicit inheritance via `ctx.emit()` and `Subject.set()`, independent roots for sequential top-level emits, no leakage after scope exit, and absence of any Subject surface. Verified end-to-end against real Google Cloud Pub/Sub, including a round-trip proving the chain `origin_id` travels as `originid` and is re-seeded on the subscriber side.
 
 Known pre-existing limitation (out of scope): the HTTP CloudEvents dispatcher is a sync `def` that calls the async `subject.get_ext_props()` without awaiting it, so it fails before reaching the origin_id logic; making the HTTP dispatcher async is separate work.
+
+## Fix: PubSub route dispatcher emits the chain origin_id (3.2.1)
+
+**Date:** 2026-07-09
+
+Completes the origin_id propagation shipped in 3.2.0, which updated only the
+PubSub *publisher*. The `CloudEventsDispatcher.dispatch()` path
+(`krules_cloudevents_pubsub/route/dispatcher.py`) — the one outbound channels use
+via a dispatcher — still hardcoded `originid = _id`, so every dispatched event
+minted a fresh root and broke chain correlation on that path. Surfaced by an
+end-to-end run of the downstream Companion consumer (channel wire `originid`
+equalled the per-message id instead of the chain root).
+
+**What was done:**
+- `route/dispatcher.py`: `ext_props['originid'] = get_origin_id() or _id`
+  (mirrors the publisher), with `from krules_core.origin import get_origin_id`.
+- Bumped version to 3.2.1 and published to PyPI.
