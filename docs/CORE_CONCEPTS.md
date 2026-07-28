@@ -14,11 +14,11 @@ KRules is built on three core principles:
 
 ### 1. Subjects (Reactive State Store)
 
-**Subjects** are dynamic entities with schema-less properties. When a property changes, the subject automatically emits a `subject-property-changed` event.
+**Subjects** are dynamic entities with schema-less properties. When a property changes, the subject automatically emits a `subject-property-changed` event — *changes* being the operative word: setting a property to the value it already holds emits nothing.
 
 **Key characteristics:**
 - **Schema-less** - No predefined structure, add properties dynamically
-- **Reactive** - Property changes emit events automatically
+- **Reactive** - Property changes emit events automatically, and only on actual change
 - **Persistent** - Backed by storage (Redis, SQLite, in-memory)
 - **Atomic** - Lambda values enable atomic operations
 
@@ -28,7 +28,10 @@ from krules_core.container import KRulesContainer
 container = KRulesContainer()
 device = container.subject("device-001")
 
-# Set property → automatically emits subject-property-changed
+# Set property → emits subject-property-changed (the value changed)
+await device.set("temperature", 75.5)
+
+# Same value again → no event, handlers are not re-triggered
 await device.set("temperature", 75.5)
 
 # Atomic increment
@@ -145,17 +148,20 @@ await device.set("status", "ok")
 
 # Step 3: Trigger event cascade
 await device.set("status", "error")
-# → Emits subject-property-changed (automatically)
+# → "ok" != "error" → emits subject-property-changed (automatically)
 # → handle_error_status matches & executes
 # → Emits alert.device_error
 # → send_alert matches & executes
+
+# Re-setting the same status starts no cascade at all
+await device.set("status", "error")  # → nothing, the value did not change
 ```
 
 ## Event-Driven Paradigm
 
 KRules follows a pure event-driven model where:
 
-1. **State changes are events** - Setting a property emits an event
+1. **State changes are events** - Setting a property to a *new* value emits an event; a set that changes nothing is not a state change and emits nothing
 2. **Handlers react to events** - No direct calls between components
 3. **Events cascade** - Handlers can emit new events
 4. **Loose coupling** - Components don't know about each other

@@ -90,6 +90,9 @@ Set property value (async).
 
 **Returns:** tuple[(new_value, old_value)]
 
+**Events:** emits `subject-property-changed` **only when `value != old_value`** (and `muted`
+is False). Re-setting a property to its current value writes the value but emits nothing.
+
 **Example:**
 ```python
 await user.set("email", "john@example.com")
@@ -97,6 +100,8 @@ await user.set("counter", lambda c: c + 1)
 await user.set("internal", 0, muted=True)
 await user.set("status", "suspended", extra={"reason": "policy_violation"})
 await user.set("metric", 100, use_cache=False)  # Write immediately to storage
+
+await user.set("email", "john@example.com")  # Same value → NO event
 ```
 
 #### `async get(prop: str, default: Any = None, use_cache: bool | None = None) -> Any`
@@ -130,6 +135,11 @@ Delete property (async).
 - `use_cache` (bool | None): If True, cache only; if False, delete from storage; if None, use constructor default
 
 **Returns:** None
+
+**Events:** emits `subject-property-deleted` **on every successful call** (unless `muted`).
+Unlike `set()`, deletion performs no value comparison — there is no "nothing changed" case.
+
+**Raises:** AttributeError if the property doesn't exist (no event is emitted).
 
 **Example:**
 ```python

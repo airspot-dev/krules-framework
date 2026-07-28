@@ -32,3 +32,19 @@ Introduced a first-class `origin_id` that identifies an event chain — the whol
 - Tests (`tests/test_core_v2/test_origin_id.py`): concurrent-chain isolation, implicit inheritance via `ctx.emit()` and `Subject.set()`, independent roots for sequential top-level emits, no leakage after scope exit, and absence of any Subject surface. Verified end-to-end against real Google Cloud Pub/Sub, including a round-trip proving the chain `origin_id` travels as `originid` and is re-seeded on the subscriber side.
 
 Known pre-existing limitation (out of scope): the HTTP CloudEvents dispatcher is a sync `def` that calls the async `subject.get_ext_props()` without awaiting it, so it fails before reaching the origin_id logic; making the HTTP dispatcher async is separate work.
+
+## Clarify that subject-property-changed is emitted only on actual change
+
+**Date:** 2026-07-28
+**Branch:** `feature/skill-doc-property-changed-emitted-only-on-change`
+
+Aligned documentation and docstrings with the real emission rule of `Subject.set()`: the `subject-property-changed` event fires only when the new value differs from the current one. Several documents asserted or implied that every `.set()` emits, which is false and leads to two opposite mistakes — using `set()` as a trigger to force a handler to run, and defensively re-checking a change the framework already guarantees. No behaviour was changed; only the documentation was made truthful.
+
+**What was done:**
+- `krules_core/subject/storaged_subject.py`: docstrings for `set()` (emission conditional on `value != old_value` and `muted`, with an example of the silent re-set), `set_ext()` (never emits — metadata outside the reactive flow), and `delete()` (emits on every successful call, no comparison; added the `AttributeError` case for a missing property).
+- `docs/SUBJECTS.md`: replaced the false "Every `.set()` emits ..." claim; rewrote the *Property Change Events* section with the rule, its practical consequences, Python `!=` semantics, the `old_value is None` case for a new property, and a comparison table of `set()` / `delete()` / `set_ext()`.
+- `docs/CORE_CONCEPTS.md`: disambiguated the Subjects intro, the `set("temperature")` example, and the event cascade example; corrected the "state changes are events" principle.
+- `docs/API_REFERENCE.md`: added **Events** notes to `set()` and `delete()`, plus **Raises** for `delete()`.
+- `README.md`: aligned the Subjects paragraph (the "Events on Change Only" bullet was already correct).
+
+Companion commit in the `airspot-skills` repository (`krules-python` skill): new *Change-Only Emission* section in `SUBJECTS.md`, antipattern §9 rewritten and inverted from "Ignoring Value Changes" to "Assuming `set()` Always Emits", rule surfaced in `SKILL.md`, and removal of the redundant `@when(old_value != new_value)` guards that had been copied into `REFERENCE.md` and `HANDLERS.md`.
