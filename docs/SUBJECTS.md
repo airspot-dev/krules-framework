@@ -58,7 +58,9 @@ await user.set("address", {
 await user.set("tags", ["premium", "verified"])
 ```
 
-**Every `.set()` emits a `subject-property-changed` event** (unless muted).
+**`.set()` emits a `subject-property-changed` event only when the value actually changes**
+(and unless muted). Setting a property to the value it already holds writes the value but
+emits nothing — see [Property Change Events](#property-change-events).
 **All Subject methods are async in KRules 3.0** - always use `await`.
 
 ### Getting Properties
@@ -157,10 +159,11 @@ Subjects support two property types:
 
 ### Default Properties (Reactive)
 
-Standard properties that emit `subject-property-changed` events:
+Standard properties that emit `subject-property-changed` events when their value changes:
 
 ```python
 await user.set("email", "john@example.com")  # Emits event
+await user.set("email", "john@example.com")  # Same value → no event
 ```
 
 ### Extended Properties (Metadata)
@@ -184,7 +187,34 @@ ip = await user.get_ext("last_ip")
 
 ## Property Change Events
 
-Every property change (via `.set()`) automatically emits a `subject-property-changed` event.
+A `.set()` automatically emits a `subject-property-changed` event **only when the value
+actually changes**. The subject compares the new value against the current one and, if they
+are equal, writes the value and emits nothing:
+
+```python
+await user.set("status", "active")   # Was "pending" → event emitted
+await user.set("status", "active")   # Already "active" → NO event
+```
+
+This makes `.set()` naturally idempotent from a reactive standpoint: repeatedly setting the
+same value does not re-trigger handlers. Two consequences worth internalizing:
+
+- Never rely on `.set()` as a "ping" to re-run a handler — an unchanged value produces
+  nothing. Emit an explicit event instead.
+- Guards like `@when(lambda ctx: ctx.old_value != ctx.new_value)` are redundant: the
+  framework has already applied that check before emitting.
+
+The comparison uses standard Python equality (`!=`), so it follows the semantics of the
+value's own type. For a property that does not yet exist, `old_value` is `None` — meaning
+that setting a new property to `None` emits nothing.
+
+**The other two methods behave differently:**
+
+| Method | Emission |
+|--------|----------|
+| `.set()` | `subject-property-changed` **only if the value changed**, and unless `muted=True` |
+| `.delete()` | `subject-property-deleted` on **every successful** call, unless `muted=True` — no comparison (deleting a missing property raises `AttributeError`) |
+| `.set_ext()` | **never** emits — extended properties are outside the reactive flow |
 
 **Event payload:**
 ```python

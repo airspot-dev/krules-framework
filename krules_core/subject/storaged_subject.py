@@ -200,10 +200,15 @@ class Subject:
         """
         Set a property value.
 
+        The "subject-property-changed" event is emitted ONLY when the new value differs
+        from the old one (``value != old_value``) and ``muted`` is False. Re-setting a
+        property to its current value still writes the value, but emits no event.
+        Note that ``delete()`` behaves differently: it always emits.
+
         Args:
             prop: Property name
             value: Property value (can be callable for atomic operations)
-            muted: If True, don't emit property-changed event
+            muted: If True, never emit the property-changed event
             extra: Optional dict with extra context passed to event handlers
             use_cache: If True, only update cache; if False, write directly to storage;
                        if None, use default from constructor (default: None)
@@ -216,6 +221,7 @@ class Subject:
             await user.set("counter", lambda c: c + 1)  # Atomic increment
             await user.set("status", "active", extra={"reason": "login"})
             await user.set("temp", "value", use_cache=False)  # Write immediately to storage
+            await user.set("name", "John")  # Same value -> no event emitted
         """
         # Determine cache usage
         if use_cache is None:
@@ -279,6 +285,9 @@ class Subject:
         """
         Set an extended property value.
 
+        Extended properties never emit events, whatever the value: they are metadata,
+        outside the reactive flow. Use set() for anything handlers should react to.
+
         Args:
             prop: Property name
             value: Property value
@@ -332,6 +341,12 @@ class Subject:
     async def delete(self, prop, muted=False, extra=None, use_cache=None):
         """
         Delete a property.
+
+        Unlike set(), deletion emits "subject-property-deleted" on every successful call
+        (unless muted): there is no value comparison to skip it.
+
+        Raises:
+            AttributeError: if the property does not exist (nothing is emitted)
 
         Args:
             prop: Property name

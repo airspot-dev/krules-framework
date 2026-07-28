@@ -107,7 +107,7 @@ await device.set("cpu_usage", 45, use_cache=False)  # → NO EVENT (health uncha
 
 ### Subjects - Reactive State Entities
 
-Subjects are dynamic entities with persistent, reactive properties. Setting a property automatically emits a `subject-property-changed` event.
+Subjects are dynamic entities with persistent, reactive properties. Setting a property to a new value automatically emits a `subject-property-changed` event — setting it to the value it already holds emits nothing.
 
 ```python
 from krules_core.container import KRulesContainer
