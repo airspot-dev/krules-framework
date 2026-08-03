@@ -5,27 +5,6 @@ KRules Framework 3.2.1 — async-only event-driven framework for Python applicat
 
 ## Repository
 - Main branch: `main`
-- Current working directory: `/Users/ade/Dev/KRules/krules-framework`
-
-## ClickUp Configuration
-
-### Space
-- **Team Space** (space_id: 90157409183)
-- URL: https://app.clickup.com/90151786764/v/s/90157409183
-
-### Folder
-- **KRules** (folder_id: 901510655880)
-- URL: https://app.clickup.com/90151786764/v/f/901510655880
-
-### Lists
-- **TODOs** (list_id: 901516453755)
-- URL: https://app.clickup.com/90151786764/v/li/901516453755
-- Use this list for all KRules Framework tasks
-
-## Branch Naming Convention
-- Features: `feature/{task_id}-{short-description}`
-- Bugs: `fix/{task_id}-{short-description}`
-- Refactoring: `refactor/{task_id}-{short-description}`
 
 ## Project Structure
 - `krules/` - Core framework code
@@ -87,7 +66,8 @@ valido è `krules-python-skill`.
 1. Stesso nome di branch nei due repo.
 2. Commit **e push** su `krules-python-skill` **prima** di aggiornare il puntatore qui: un
    puntatore verso uno SHA non pushato rende il submodule irrisolvibile a chi clona.
-3. Aggiornare l'aggregatore `airspot-skills` con `git submodule update --remote --merge`.
+3. Se il tuo ambiente monta la skill anche altrove (un aggregatore, un checkout
+   separato), aggiornarne il puntatore: `git submodule update --remote --merge`.
 
 ### Note operative sul submodule
 

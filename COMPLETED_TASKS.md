@@ -98,3 +98,25 @@ this commit.
 **Deliberately unchanged:** the 3.1.0 changelog entry still names `krules-claude-skill`, a
 now-decommissioned repository. It was accurate when written and rewriting it would falsify
 the record; the rule in `CLAUDE.md` names the current repository from here on.
+
+## CLAUDE.md cleaned for public distribution
+
+**Date:** 2026-08-03
+**Branch:** `feature/claude-md-ripulito-per-distribuzione-pubblica`
+
+This repository is public, and its `CLAUDE.md` carried material that had no business being
+readable by everyone: the ClickUp workspace configuration (space, folder and list ids, with
+their URLs), a branch-naming convention keyed to internal task ids, and an absolute path
+from one developer's machine.
+
+All of it is removed. The published npm package was never affected — it ships only `src`,
+`README.md` and `LICENSE` — so the exposure was through the git repository alone.
+
+**What stays, deliberately:** the recommendation to reflect library changes in the
+companion skill. That is maintenance discipline any contributor benefits from knowing, and
+it says nothing internal. The reference to an aggregator that mounts the skill elsewhere is
+now phrased conditionally, since that arrangement belongs to whoever adopts it rather than
+to this project.
+
+The skill repository it names is being made public alongside this change, so the submodule
+resolves for anyone rather than only for members of the organisation.
