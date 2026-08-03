@@ -1,0 +1,4 @@
+[submodule ".claude/skills/krules-python"]
+	path = .claude/skills/krules-python
+	url = git@github.com:airspot-dev/krules-python-skill.git
+	branch = main

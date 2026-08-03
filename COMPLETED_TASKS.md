@@ -65,3 +65,36 @@ Aligned documentation and docstrings with the real emission rule of `Subject.set
 - `README.md`: aligned the Subjects paragraph (the "Events on Change Only" bullet was already correct).
 
 Companion commit in the `airspot-skills` repository (`krules-python` skill): new *Change-Only Emission* section in `SUBJECTS.md`, antipattern §9 rewritten and inverted from "Ignoring Value Changes" to "Assuming `set()` Always Emits", rule surfaced in `SKILL.md`, and removal of the redundant `@when(old_value != new_value)` guards that had been copied into `REFERENCE.md` and `HANDLERS.md`.
+
+## The krules-python skill mounted as a production submodule
+
+**Date:** 2026-08-03
+**Branch:** `feature/krules-python-agganciata-come-submodule`
+
+This repository produces the `krules-python` skill, which until now lived in an unrelated
+monorepo with nothing connecting the two. It is now mounted at
+`.claude/skills/krules-python` from `airspot-dev/krules-python-skill`, and `CLAUDE.md`
+carries the co-evolution rule.
+
+**What the rule says:** changes to the public `Subject` API, property-event semantics,
+`origin_id` and chain propagation, storage backends, container/IoC composition, or the
+Celery/FastAPI/Pub-Sub integrations must be reflected in the skill within the same
+activity — not deferred.
+
+**The signal is mechanical here.** Unlike infrastructure work, this project has a
+`CHANGELOG.md` and a version number: any entry describing observable behaviour is a
+candidate, and the `Framework Version` declared in the skill must match what was released.
+A release that raises the version without touching the skill is a verifiable mismatch, not
+a judgement call.
+
+**It had already happened.** `origin_id` landed in 3.2.0 with its changelog entry; the
+skill went on declaring 3.0 and never mentioned the feature for three weeks, because the
+two lived in disconnected repositories. That drift was found by hand and fixed just before
+this commit.
+
+**Also corrected:** the project overview called this "v2.0+" while the framework is at
+3.2.1 — the same class of drift, inside the file meant to guard against it.
+
+**Deliberately unchanged:** the 3.1.0 changelog entry still names `krules-claude-skill`, a
+now-decommissioned repository. It was accurate when written and rewriting it would falsify
+the record; the rule in `CLAUDE.md` names the current repository from here on.
