@@ -127,14 +127,12 @@ class Subject:
             try:
                 value = await self._storage.get(SubjectProperty(prop))
 
-                # Update cache if present (don't create it)
+                # Sync cache if present (never create it). A read must not produce a
+                # write obligation, nor overwrite one already pending.
                 if self._cached is not None:
-                    vals = self._cached[PropertyType.DEFAULT]["values"]
-                    vals[prop] = value
-                    # Track as updated (ignore created/deleted)
-                    if prop in self._cached[PropertyType.DEFAULT]["created"]:
-                        self._cached[PropertyType.DEFAULT]["created"].remove(prop)
-                    self._cached[PropertyType.DEFAULT]["updated"].add(prop)
+                    cache = self._cached[PropertyType.DEFAULT]
+                    if prop not in cache["created"] and prop not in cache["updated"]:
+                        cache["values"][prop] = value
 
                 return value
             except AttributeError:
@@ -181,14 +179,12 @@ class Subject:
             try:
                 value = await self._storage.get(SubjectExtProperty(prop))
 
-                # Update cache if present (don't create it)
+                # Sync cache if present (never create it). A read must not produce a
+                # write obligation, nor overwrite one already pending.
                 if self._cached is not None:
-                    vals = self._cached[PropertyType.EXTENDED]["values"]
-                    vals[prop] = value
-                    # Track as updated (ignore created/deleted)
-                    if prop in self._cached[PropertyType.EXTENDED]["created"]:
-                        self._cached[PropertyType.EXTENDED]["created"].remove(prop)
-                    self._cached[PropertyType.EXTENDED]["updated"].add(prop)
+                    cache = self._cached[PropertyType.EXTENDED]
+                    if prop not in cache["created"] and prop not in cache["updated"]:
+                        cache["values"][prop] = value
 
                 return value
             except AttributeError:
@@ -261,14 +257,14 @@ class Subject:
             # Direct storage operation (bypass cache)
             value, old_value = await self._storage.set(SubjectProperty(prop, value))
 
-            # Update cache if present (don't create it)
+            # Sync cache if present (never create it). The value is already in storage,
+            # so the property is clean and must not be left pending for store().
             if self._cached is not None:
-                vals = self._cached[PropertyType.DEFAULT]["values"]
-                vals[prop] = value
-                # Track as updated (ignore created/deleted)
-                if prop in self._cached[PropertyType.DEFAULT]["created"]:
-                    self._cached[PropertyType.DEFAULT]["created"].remove(prop)
-                self._cached[PropertyType.DEFAULT]["updated"].add(prop)
+                cache = self._cached[PropertyType.DEFAULT]
+                cache["values"][prop] = value
+                cache["created"].discard(prop)
+                cache["updated"].discard(prop)
+                cache["deleted"].discard(prop)
 
         # Emit property-changed event if not muted
         if not muted and value != old_value:
@@ -327,14 +323,14 @@ class Subject:
             # Direct storage operation
             value, old_value = await self._storage.set(SubjectExtProperty(prop, value))
 
-            # Update cache if present (don't create it)
+            # Sync cache if present (never create it). The value is already in storage,
+            # so the property is clean and must not be left pending for store().
             if self._cached is not None:
-                vals = self._cached[PropertyType.EXTENDED]["values"]
-                vals[prop] = value
-                # Track as updated (ignore created/deleted)
-                if prop in self._cached[PropertyType.EXTENDED]["created"]:
-                    self._cached[PropertyType.EXTENDED]["created"].remove(prop)
-                self._cached[PropertyType.EXTENDED]["updated"].add(prop)
+                cache = self._cached[PropertyType.EXTENDED]
+                cache["values"][prop] = value
+                cache["created"].discard(prop)
+                cache["updated"].discard(prop)
+                cache["deleted"].discard(prop)
 
         return (value, old_value)
 
@@ -398,17 +394,14 @@ class Subject:
             # Delete from storage
             await self._storage.delete(SubjectProperty(prop))
 
-            # Update cache if present (don't create it)
+            # Sync cache if present (never create it). The property is already gone from
+            # storage, so it is clean and must not be left pending for store().
             if self._cached is not None:
-                vals = self._cached[PropertyType.DEFAULT]["values"]
-                if prop in vals:
-                    del vals[prop]
-                # Track as deleted
-                if prop in self._cached[PropertyType.DEFAULT]["created"]:
-                    self._cached[PropertyType.DEFAULT]["created"].remove(prop)
-                if prop in self._cached[PropertyType.DEFAULT]["updated"]:
-                    self._cached[PropertyType.DEFAULT]["updated"].remove(prop)
-                self._cached[PropertyType.DEFAULT]["deleted"].add(prop)
+                cache = self._cached[PropertyType.DEFAULT]
+                cache["values"].pop(prop, None)
+                cache["created"].discard(prop)
+                cache["updated"].discard(prop)
+                cache["deleted"].discard(prop)
 
         # Emit property-deleted event if not muted
         if not muted:
@@ -466,24 +459,24 @@ class Subject:
             # Delete from storage
             await self._storage.delete(SubjectExtProperty(prop))
 
-            # Update cache if present (don't create it)
+            # Sync cache if present (never create it). The property is already gone from
+            # storage, so it is clean and must not be left pending for store().
             if self._cached is not None:
-                vals = self._cached[PropertyType.EXTENDED]["values"]
-                if prop in vals:
-                    del vals[prop]
-                # Track as deleted
-                if prop in self._cached[PropertyType.EXTENDED]["created"]:
-                    self._cached[PropertyType.EXTENDED]["created"].remove(prop)
-                if prop in self._cached[PropertyType.EXTENDED]["updated"]:
-                    self._cached[PropertyType.EXTENDED]["updated"].remove(prop)
-                self._cached[PropertyType.EXTENDED]["deleted"].add(prop)
+                cache = self._cached[PropertyType.EXTENDED]
+                cache["values"].pop(prop, None)
+                cache["created"].discard(prop)
+                cache["updated"].discard(prop)
+                cache["deleted"].discard(prop)
 
-    async def has(self, prop):
+    async def has(self, prop, use_cache=None):
         """
         Check if a property exists.
 
         Args:
             prop: Property name
+            use_cache: If True, check the cache; if False, check storage directly
+                       without creating or touching the cache; if None, use the
+                       default from the constructor (default: None)
 
         Returns:
             bool: True if property exists
@@ -491,19 +484,35 @@ class Subject:
         Example:
             if await user.has("name"):
                 name = await user.get("name")
+            fresh = await user.has("name", use_cache=False)  # Ask storage
         """
+        # Determine cache usage
+        if use_cache is None:
+            use_cache = self._use_cache
+
+        if not use_cache:
+            # Direct storage operation: single key, cache left untouched
+            try:
+                await self._storage.get(SubjectProperty(prop))
+                return True
+            except AttributeError:
+                return False
+
         # Auto-load cache if needed
         if self._cached is None:
             await self._load()
 
         return prop in self._cached[PropertyType.DEFAULT]["values"]
 
-    async def has_ext(self, prop):
+    async def has_ext(self, prop, use_cache=None):
         """
         Check if an extended property exists.
 
         Args:
             prop: Property name
+            use_cache: If True, check the cache; if False, check storage directly
+                       without creating or touching the cache; if None, use the
+                       default from the constructor (default: None)
 
         Returns:
             bool: True if extended property exists
@@ -511,16 +520,34 @@ class Subject:
         Example:
             if await user.has_ext("tenant_id"):
                 tenant = await user.get_ext("tenant_id")
+            fresh = await user.has_ext("tenant_id", use_cache=False)  # Ask storage
         """
+        # Determine cache usage
+        if use_cache is None:
+            use_cache = self._use_cache
+
+        if not use_cache:
+            # Direct storage operation: single key, cache left untouched
+            try:
+                await self._storage.get(SubjectExtProperty(prop))
+                return True
+            except AttributeError:
+                return False
+
         # Auto-load cache if needed
         if self._cached is None:
             await self._load()
 
         return prop in self._cached[PropertyType.EXTENDED]["values"]
 
-    async def keys(self):
+    async def keys(self, use_cache=None):
         """
         Get list of all property names.
+
+        Args:
+            use_cache: If True, read from the cache; if False, read from storage
+                       without creating or touching the cache; if None, use the
+                       default from the constructor (default: None)
 
         Returns:
             list: Property names
@@ -529,23 +556,47 @@ class Subject:
             keys = await user.keys()
             for key in keys:
                 value = await user.get(key)
+            fresh_keys = await user.keys(use_cache=False)  # See other processes' writes
         """
+        # Determine cache usage
+        if use_cache is None:
+            use_cache = self._use_cache
+
+        if not use_cache:
+            # Direct storage operation: cache left untouched
+            props, _ = await self._storage.load()
+            return list(props.keys())
+
         # Auto-load cache if needed
         if self._cached is None:
             await self._load()
 
         return list(self._cached[PropertyType.DEFAULT]["values"].keys())
 
-    async def get_ext_props(self):
+    async def get_ext_props(self, use_cache=None):
         """
         Get all extended properties as dict.
+
+        Args:
+            use_cache: If True, read from the cache; if False, read from storage
+                       without creating or touching the cache; if None, use the
+                       default from the constructor (default: None)
 
         Returns:
             dict: Extended properties
 
         Example:
             ext_props = await user.get_ext_props()
+            fresh_props = await user.get_ext_props(use_cache=False)  # Read from storage
         """
+        # Determine cache usage
+        if use_cache is None:
+            use_cache = self._use_cache
+
+        if not use_cache:
+            # Direct storage operation: cache left untouched
+            return await self._storage.get_ext_props()
+
         # Auto-load cache if needed
         if self._cached is None:
             await self._load()
@@ -652,9 +703,14 @@ class Subject:
 
         return self
 
-    async def dict(self):
+    async def dict(self, use_cache=None):
         """
         Get dict representation of subject.
+
+        Args:
+            use_cache: If True, read from the cache; if False, read from storage
+                       without creating or touching the cache; if None, use the
+                       default from the constructor (default: None)
 
         Returns:
             dict: Subject properties as dict
@@ -662,7 +718,20 @@ class Subject:
         Example:
             data = await user.dict()
             # {"name": "user-123", "email": "...", "ext": {"tenant_id": "..."}}
+            fresh_data = await user.dict(use_cache=False)  # Read from storage
         """
+        # Determine cache usage
+        if use_cache is None:
+            use_cache = self._use_cache
+
+        if not use_cache:
+            # Direct storage operation: cache left untouched
+            props, ext_props = await self._storage.load()
+            obj = {"name": self.name}
+            obj.update(props)
+            obj["ext"] = dict(ext_props)
+            return obj
+
         # Auto-load cache if needed
         if self._cached is None:
             await self._load()

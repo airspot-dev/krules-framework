@@ -168,9 +168,41 @@ Persist cached changes to storage (async).
 
 Delete entire subject from storage and emit deletion events (async).
 
-#### `async dict() -> dict`
+#### `async has(prop: str, use_cache: bool | None = None) -> bool`
+
+Check whether a property exists (async).
+
+**Parameters:**
+- `prop` (str): Property name
+- `use_cache` (bool | None): If True, check the cache; if False, query storage directly without creating or touching the cache; if None, use constructor default
+
+#### `async has_ext(prop: str, use_cache: bool | None = None) -> bool`
+
+Check whether an extended property exists (async). Same `use_cache` semantics as `has()`.
+
+#### `async keys(use_cache: bool | None = None) -> list`
+
+List property names (async).
+
+**Parameters:**
+- `use_cache` (bool | None): If True, read from the cache; if False, read from storage without creating or touching the cache; if None, use constructor default
+
+**Example:**
+```python
+keys = await user.keys()
+fresh = await user.keys(use_cache=False)  # includes other processes' writes
+```
+
+#### `async get_ext_props(use_cache: bool | None = None) -> dict`
+
+Get all extended properties (async). Same `use_cache` semantics as `keys()`.
+
+#### `async dict(use_cache: bool | None = None) -> dict`
 
 Export subject to dictionary (async).
+
+**Parameters:**
+- `use_cache` (bool | None): If True, read from the cache; if False, read from storage without creating or touching the cache; if None, use constructor default
 
 **Returns:** Dict with name, properties, and extended properties
 
@@ -181,9 +213,13 @@ data = await user.dict()
 ```
 
 **Magic Methods:**
-- `__contains__(item)`: Check if property exists (`"email" in user`)
-- `__iter__()`: Iterate over property names (`for prop in user`)
-- `__len__()`: Get property count (`len(user)`)
+- `__str__()`: Subject name
+- `__repr__()`: `Subject<name>`
+
+Container protocol methods (`__contains__`, `__iter__`, `__len__`) were removed in 3.0
+along with magic property access — every read is async now. Use `await has(prop)`,
+`await keys()` and `len(await keys())` instead.
+See [Migration to v3](MIGRATION_V3.md).
 
 **See:** [Subjects](SUBJECTS.md)
 

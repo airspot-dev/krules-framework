@@ -436,3 +436,121 @@ class TestSubjectAsync:
 
         # Cache should be updated
         assert subject._cached[PropertyType.DEFAULT]["values"]["prop1"] == "value2"
+
+    async def test_subject_keys_use_cache_default_false_sees_external_writes(self):
+        """Regression: keys() on a non-cached Subject must not freeze the first read
+
+        Reproduces the reported scenario: a Subject created with use_cache_default=False
+        used to load the cache on the first keys() and then serve that snapshot forever,
+        so writes made by other processes stayed invisible.
+        """
+        subject = container.subject("user:user", use_cache_default=False)
+
+        assert await subject.keys() == []
+
+        # Another process writes to the same subject
+        other = container.subject("user:user", use_cache_default=False)
+        await other.set("prop1", "value1")
+
+        assert await subject.keys() == ["prop1"]
+
+    async def test_subject_collection_reads_use_cache_false_do_not_create_cache(self):
+        """Collection reads with use_cache=False must not populate the cache"""
+        subject = container.subject("test")
+
+        await subject.keys(use_cache=False)
+        await subject.dict(use_cache=False)
+        await subject.get_ext_props(use_cache=False)
+        await subject.has("whatever", use_cache=False)
+        await subject.has_ext("whatever", use_cache=False)
+
+        assert subject._cached is None
+
+    async def test_subject_has_use_cache_false(self):
+        """has()/has_ext() with use_cache=False should query storage"""
+        writer = container.subject("test", use_cache_default=False)
+        reader = container.subject("test", use_cache_default=False)
+
+        assert await reader.has("prop1") is False
+        assert await reader.has_ext("ext_prop") is False
+
+        await writer.set("prop1", "value1")
+        await writer.set_ext("ext_prop", "ext_value")
+
+        assert await reader.has("prop1") is True
+        assert await reader.has_ext("ext_prop") is True
+
+    async def test_subject_dict_and_ext_props_use_cache_false(self):
+        """dict()/get_ext_props() with use_cache=False should read fresh from storage"""
+        subject = container.subject("test", use_cache_default=False)
+        await subject.set("prop1", "value1")
+        await subject.set_ext("ext_prop", "ext_value")
+
+        other = container.subject("test", use_cache_default=False)
+        await other.set("prop2", "value2")
+
+        assert await subject.dict() == {
+            "name": "test",
+            "prop1": "value1",
+            "prop2": "value2",
+            "ext": {"ext_prop": "ext_value"},
+        }
+        assert await subject.get_ext_props() == {"ext_prop": "ext_value"}
+
+    async def test_subject_direct_read_creates_no_write_obligation(self):
+        """get() with use_cache=False must not mark the property as pending"""
+        from krules_core.subject import PropertyType
+
+        subject = container.subject("test")
+
+        # Build a cache and persist it, so nothing is pending
+        await subject.set("prop1", "value1")
+        await subject.store()
+        await subject.get("prop1")  # reload cache
+        assert subject._cached is not None
+
+        await subject.get("prop1", use_cache=False)
+
+        assert subject._cached[PropertyType.DEFAULT]["created"] == set()
+        assert subject._cached[PropertyType.DEFAULT]["updated"] == set()
+
+    async def test_subject_direct_read_preserves_pending_write(self):
+        """get() with use_cache=False must not overwrite an unpersisted cached value"""
+        from krules_core.subject import PropertyType
+
+        subject = container.subject("test")
+        await subject.set("prop1", "stored")
+        await subject.store()
+
+        # Pending change, not yet persisted
+        await subject.set("prop1", "pending")
+
+        # A direct read returns the stored value but leaves the pending one intact
+        assert await subject.get("prop1", use_cache=False) == "stored"
+        assert subject._cached[PropertyType.DEFAULT]["values"]["prop1"] == "pending"
+
+        await subject.store()
+        assert await subject.get("prop1", use_cache=False) == "pending"
+
+    async def test_subject_direct_write_leaves_property_clean(self):
+        """Direct set()/delete() must not leave the property pending for store()"""
+        from krules_core.subject import PropertyType
+
+        subject = container.subject("test")
+
+        # Build a cache
+        await subject.set("prop1", "value1")
+        await subject.store()
+        await subject.get("prop1")
+
+        await subject.set("prop1", "value2", use_cache=False)
+        assert subject._cached[PropertyType.DEFAULT]["created"] == set()
+        assert subject._cached[PropertyType.DEFAULT]["updated"] == set()
+        assert subject._cached[PropertyType.DEFAULT]["deleted"] == set()
+
+        await subject.delete("prop1", use_cache=False)
+        assert subject._cached[PropertyType.DEFAULT]["deleted"] == set()
+
+        # store() must not resurrect or re-delete anything
+        await subject.store()
+        assert await subject.keys(use_cache=False) == []

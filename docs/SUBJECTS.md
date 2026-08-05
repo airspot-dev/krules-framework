@@ -349,6 +349,21 @@ fresh_value = await user.get("counter", use_cache=False)
 await user.delete("temp_field", use_cache=False)
 ```
 
+The same parameter is accepted by the methods that read the whole property set —
+`keys()`, `has()`, `has_ext()`, `get_ext_props()` and `dict()`:
+
+```python
+# See properties written by other processes
+fresh_keys = await user.keys(use_cache=False)
+snapshot = await user.dict(use_cache=False)
+
+if await user.has("session", use_cache=False):
+    ...
+```
+
+With `use_cache=False` these read straight from storage and leave the cache
+untouched — they never create one, and never modify one that already exists.
+
 **When to use `use_cache=False`:**
 - **Cross-process coordination** - Multiple processes/containers accessing same subject
 - **Atomic operations** - Lambda values with `use_cache=False` ensure atomic storage updates
@@ -413,6 +428,25 @@ cached_value = await user.get("status", use_cache=True)
 ```
 
 This ensures consistency between cache and storage.
+
+Synchronization never turns into a pending write. After a direct operation the
+property matches storage, so it is *clean*: a later `store()` will not rewrite it.
+
+A direct read is more conservative still — it refreshes the cached value only when
+the property has no unpersisted change, so it cannot discard work you have not
+stored yet:
+
+```python
+await user.set("status", "active")
+await user.store()
+
+await user.set("status", "pending")          # cached, not yet persisted
+
+await user.get("status", use_cache=False)    # returns "active" from storage
+await user.get("status")                     # still "pending" - not clobbered
+
+await user.store()                           # "pending" reaches storage
+```
 
 ### Batch Operations
 
