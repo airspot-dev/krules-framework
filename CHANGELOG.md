@@ -5,6 +5,78 @@ All notable changes to KRules Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2026-08-05
+
+### 🐛 Fixed
+
+- **`use_cache` ignored by the property-set readers** — `keys()`, `has()`, `has_ext()`,
+  `get_ext_props()` and `dict()` loaded the cache unconditionally, ignoring both their
+  (missing) `use_cache` argument and the Subject's `use_cache_default`.
+
+  On a Subject created with `use_cache_default=False` the first such call populated a
+  cache that nothing ever invalidated — `_cached` is only reset by `store()` (never
+  called on a non-cached Subject, as there is nothing pending) and `flush()`. Every
+  later call served that frozen snapshot, so properties written by other processes
+  stayed invisible for the lifetime of the object:
+
+  ```python
+  ss = container.subject("user:user", use_cache_default=False)
+  await ss.keys()   # []
+  # another process writes properties...
+  await ss.keys()   # [] -- stale, now returns the new keys
+  ```
+
+- **Direct reads created spurious write obligations** — `get()`/`get_ext()` with
+  `use_cache=False` added the property to the cache's `updated` set. A pure read thus
+  scheduled a write, and a later `store()` pushed the re-read value back to storage,
+  potentially overwriting concurrent changes made by other processes — the opposite of
+  what `use_cache=False` is for.
+
+- **Direct writes left properties pending** — `set()`/`set_ext()`/`delete()` with
+  `use_cache=False` marked the property in `updated`/`deleted` even though storage was
+  already up to date, causing `store()` to redundantly rewrite or re-delete it.
+
+### ✨ Added
+
+- **`use_cache` parameter on `keys()`, `has()`, `has_ext()`, `get_ext_props()` and
+  `dict()`** — same semantics as the other Subject methods (`None` falls back to
+  `use_cache_default`). With `use_cache=False` these read from storage and leave the
+  cache untouched: they never create one, and never mutate one that exists.
+
+### 🔧 Technical Details
+
+Cache/storage coherence now follows two rules:
+
+- a **direct write** makes the property *clean* — cache and storage agree, so it is
+  removed from every pending set;
+- a **direct read** refreshes the cached value only when the property has no
+  unpersisted change, so it can never discard work not yet stored.
+
+`use_cache_default` remains `True`, so cache-first code is unaffected.
+
+### 🧪 Testing
+
+- Added 7 tests covering the reported scenario and the cache-coherence rules
+  (34 Subject tests passing).
+
+## [3.2.1] - 2026-07-09
+
+### 🐛 Fixed
+
+- **PubSub route dispatcher minted a fresh `origin_id`** — 3.2.0 introduced transparent
+  `origin_id` propagation but updated only the PubSub publisher.
+  `CloudEventsDispatcher.dispatch()`, used by outbound channels, still hardcoded
+  `originid = _id`, so every dispatched event started a new root and broke chain
+  correlation on that path. It now mirrors the publisher
+  (`originid = get_origin_id() or _id`), falling back to the fresh message id only
+  outside an active chain.
+
+  Surfaced by an end-to-end run of the downstream Companion consumer, where the wire
+  `originid` equalled the per-message id instead of the chain root.
+
+*This entry was reconstructed after the fact: 3.2.1 was released to PyPI without a
+changelog entry. See the release checklist in [RELEASING.md](RELEASING.md).*
+
 ## [3.2.0] - 2026-07-09
 
 ### ✨ Added

@@ -1,15 +1,23 @@
 # KRules Framework - Project Memory
 
 ## Project Overview
-KRules Framework 3.2.1 — async-only event-driven framework for Python applications.
+KRules Framework — async-only event-driven framework for Python applications.
+The released version lives in `pyproject.toml`; don't restate it here, it drifts.
 
 ## Repository
 - Main branch: `main`
 
 ## Project Structure
-- `krules/` - Core framework code
+- `krules_core/` - Core framework code (Subject, EventBus, container, settings)
+- `krules_cloudevents/`, `krules_cloudevents_pubsub/` - CloudEvents transports
+- `krules_env/`, `krules_fastapi_env/`, `krules_pubsub/` - Runtime integrations
+- `redis_subjects_storage/`, `postgres_subjects_storage/` - Storage backends
 - `docs/` - Documentation
 - Tests: Skip by default unless explicitly requested
+
+## Releasing
+Every fix or feature ends with a version bump and a PyPI publish.
+The required steps are in [RELEASING.md](RELEASING.md) — follow it, don't improvise.
 
 ## Development Notes
 - Python async-first framework

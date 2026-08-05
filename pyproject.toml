@@ -1,6 +1,6 @@
 [project]
 name = "krules-framework"
-version = "3.2.1"
+version = "3.2.2"
 description = "KRules Framework - Async event-driven framework"
 authors = [{name = "Airspot", email = "info@airspot.tech"}]
 requires-python = ">=3.11"

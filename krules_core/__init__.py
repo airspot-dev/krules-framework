@@ -72,7 +72,18 @@ from .subject import PayloadConst, PropertyType, SubjectProperty, SubjectExtProp
 from .container import KRulesContainer
 
 # Version
-__version__ = "2.0.0"
+# Derived from the installed package metadata: pyproject.toml is the single source of
+# truth. Hardcoding it here let __version__ drift to 2.0.0 while the project shipped
+# 3.2.x. "unknown" is reported only when the package is not installed (raw source tree)
+# — never a plausible-looking wrong version.
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+try:
+    __version__ = _pkg_version("krules-framework")
+except PackageNotFoundError:  # pragma: no cover - source tree without an install
+    __version__ = "unknown"
+
+del _pkg_version, PackageNotFoundError
 
 __all__ = [
     # Container (PRIMARY API - use this)

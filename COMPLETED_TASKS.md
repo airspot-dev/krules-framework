@@ -120,3 +120,34 @@ to this project.
 
 The skill repository it names is being made public alongside this change, so the submodule
 resolves for anyone rather than only for members of the organisation.
+
+## Subject property-set readers now honour use_cache (3.2.2)
+
+**Date:** 2026-08-05
+**Branch:** `feature/verify-cache-scenario`
+
+A Subject created with `use_cache_default=False` kept reporting an empty property list
+while other processes were writing to it. `keys()`, `has()`, `has_ext()`, `get_ext_props()`
+and `dict()` did not accept `use_cache` and never consulted `use_cache_default`: they
+always loaded the cache. Since the cache is only discarded by `store()` and `flush()` —
+and a non-cached Subject never calls `store()`, having nothing pending to persist — the
+first such call froze a snapshot that was served for the lifetime of the object.
+
+Two adjacent defects surfaced from the same bookkeeping. A direct read added the property
+to the cache's `updated` set, so a pure read scheduled a write that `store()` would later
+push back to storage, potentially overwriting concurrent changes. A direct write left the
+property marked pending even though storage was already up to date.
+
+**What was done:**
+- Added `use_cache` to `keys()`, `has()`, `has_ext()`, `get_ext_props()` and `dict()`; with
+  `use_cache=False` they read from storage and never create or mutate the cache
+- Established two coherence rules: a direct write leaves the property clean, a direct read
+  refreshes the cached value only when nothing is pending, so it cannot discard unstored work
+- Added 7 regression tests, including the reported cross-process scenario
+- Derived `krules_core.__version__` from package metadata; the hardcoded copy had drifted to
+  `2.0.0` across five releases
+- Reconstructed the missing 3.2.1 changelog entry and corrected `API_REFERENCE.md`, which
+  documented three container protocol methods the async Subject does not implement
+- Added `RELEASING.md` with the bump-and-publish checklist, covering the manual steps the
+  invoke pipeline does not perform
+- Released 3.2.2 to PyPI and updated the `krules-python` skill in step
